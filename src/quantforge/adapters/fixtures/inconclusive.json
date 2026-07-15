@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "name": "inconclusive",
+  "claim_statement": "A synthetic research signal has evidence requiring reproducibility review",
+  "methodology_decision": "approved",
+  "corrected_inference": "pass",
+  "effect_direction": "positive",
+  "practical_significance": true,
+  "robustness_status": "pass",
+  "cost_sensitivity": "low",
+  "parameter_stability": "stable",
+  "regime_stability": "stable",
+  "concentration_risk": "low",
+  "reproducibility_status": "failed",
+  "unresolved_critical_findings": false,
+  "contradictory_evidence": false,
+  "unresolved_noncritical_limitations": false,
+  "evidence": [
+    {
+      "evidence_id": "evidence_inconclusive_primary",
+      "evidence_type": "synthetic_primary_result",
+      "relationship": "supports",
+      "validation_status": "validated",
+      "facts": [{"fact_id": "candidate_effect_bps", "name": "synthetic candidate effect", "value": "31.0", "unit": "basis_points"}],
+      "limitation": "The synthetic reconstruction identity cannot be verified"
+    }
+  ]
+}

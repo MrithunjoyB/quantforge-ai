@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "name": "provisional",
+  "claim_statement": "A synthetic research signal has positive benchmark relative evidence after explicit costs",
+  "methodology_decision": "approved",
+  "corrected_inference": "pass",
+  "effect_direction": "positive",
+  "practical_significance": true,
+  "robustness_status": "pass",
+  "cost_sensitivity": "moderate",
+  "parameter_stability": "stable",
+  "regime_stability": "mixed",
+  "concentration_risk": "low",
+  "reproducibility_status": "verified",
+  "unresolved_critical_findings": false,
+  "contradictory_evidence": false,
+  "unresolved_noncritical_limitations": true,
+  "evidence": [
+    {
+      "evidence_id": "evidence_provisional_primary",
+      "evidence_type": "synthetic_primary_result",
+      "relationship": "supports",
+      "validation_status": "validated",
+      "facts": [{"fact_id": "effect_bps", "name": "synthetic effect", "value": "42.0", "unit": "basis_points"}],
+      "limitation": "Regime coverage remains mixed in the synthetic fixture"
+    }
+  ]
+}

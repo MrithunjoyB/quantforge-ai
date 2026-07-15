@@ -1,0 +1,59 @@
+[build-system]
+requires = ["editables==0.5", "hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quantforge-ai"
+version = "0.1.0"
+description = "Governed, deterministic research tribunal for quantitative claims"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Mrithunjoy Basumatary" }]
+dependencies = ["pydantic==2.12.5"]
+
+[project.optional-dependencies]
+dev = [
+  "mypy==1.19.1",
+  "pip-audit==2.9.0",
+  "pip-tools==7.5.2",
+  "pytest==9.0.2",
+  "pytest-cov==7.0.0",
+  "ruff==0.14.14",
+]
+
+[project.scripts]
+quantforge = "quantforge.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quantforge"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers -ra"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["quantforge"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "S", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S105", "S106"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["quantforge"]
+warn_unreachable = true

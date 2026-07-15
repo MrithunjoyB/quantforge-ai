@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "name": "fragile",
+  "claim_statement": "A synthetic research signal retains benchmark relative evidence under stated assumptions",
+  "methodology_decision": "approved",
+  "corrected_inference": "pass",
+  "effect_direction": "positive",
+  "practical_significance": true,
+  "robustness_status": "fail",
+  "cost_sensitivity": "high",
+  "parameter_stability": "mixed",
+  "regime_stability": "mixed",
+  "concentration_risk": "moderate",
+  "reproducibility_status": "verified",
+  "unresolved_critical_findings": false,
+  "contradictory_evidence": true,
+  "unresolved_noncritical_limitations": true,
+  "evidence": [
+    {
+      "evidence_id": "evidence_fragile_primary",
+      "evidence_type": "synthetic_primary_result",
+      "relationship": "supports",
+      "validation_status": "validated",
+      "facts": [{"fact_id": "gross_effect_bps", "name": "synthetic gross effect", "value": "55.0", "unit": "basis_points"}],
+      "limitation": "The primary synthetic result depends on stated costs"
+    },
+    {
+      "evidence_id": "evidence_fragile_cost",
+      "evidence_type": "synthetic_cost_stress",
+      "relationship": "contradicts",
+      "validation_status": "validated",
+      "facts": [{"fact_id": "stressed_effect_bps", "name": "synthetic stressed effect", "value": "-8.0", "unit": "basis_points"}],
+      "limitation": "The synthetic effect fails the high cost challenge"
+    }
+  ]
+}
