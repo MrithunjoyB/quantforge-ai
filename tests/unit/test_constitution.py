@@ -23,7 +23,7 @@ def test_constitution_hash_stability_and_frozen_mutation() -> None:
         constitution.model_dump(mode="python", exclude={"constitution_hash"})
     )
     with pytest.raises(ValidationError):
-        constitution.constitution_hash = "0" * 64  # type: ignore[misc]
+        constitution.constitution_hash = "0" * 64
 
 
 def test_skipped_or_mismatched_approval_is_rejected() -> None:
@@ -72,7 +72,7 @@ def test_valid_amendment_is_append_only_and_primary_rewrite_is_rejected() -> Non
         classification=AmendmentClassification.ADMINISTRATIVE,
         author_role=RoleName.RESEARCHER,
         reason="Correct a non substantive label",
-        changes={"display_label": "synthetic fixture"},
+        changes={"metadata.display_label": "synthetic fixture"},
         created_at=timestamp,
         parent_constitution_hash=constitution.constitution_hash,
     )
@@ -102,7 +102,7 @@ def test_tampered_constitution_and_amendment_hashes_are_rejected() -> None:
         classification=AmendmentClassification.REVIEWER_REQUESTED,
         author_role=RoleName.METHODOLOGY_AUDITOR,
         reason="Add a permitted robustness check",
-        changes={"robustness_check": "placebo"},
+        changes={"robustness.placebo": "required"},
         created_at=datetime(2026, 1, 2, tzinfo=UTC),
         parent_constitution_hash=constitution.constitution_hash,
     )
@@ -127,3 +127,55 @@ def test_constitution_rejects_experiment_mismatch() -> None:
             approval=wrong_approval,
             locked_at=datetime(2026, 1, 2, tzinfo=UTC),
         )
+
+
+def test_amendment_classification_and_authority_are_enforced() -> None:
+    constitution = run_demo("provisional").case.constitution
+    assert constitution is not None
+    with pytest.raises(ValidationError, match="classification"):
+        create_amendment(
+            amendment_id="amendment_wrong_class",
+            classification=AmendmentClassification.EXPLORATORY,
+            author_role=RoleName.RESEARCHER,
+            changes={"robustness.placebo": "required"},
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+            parent_constitution_hash=constitution.constitution_hash,
+            reason="Add a governed follow up",
+        )
+    with pytest.raises(ValidationError, match="author"):
+        create_amendment(
+            amendment_id="amendment_wrong_author",
+            classification=AmendmentClassification.REVIEWER_REQUESTED,
+            author_role=RoleName.RESEARCHER,
+            changes={"follow_up.placebo": "required"},
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+            parent_constitution_hash=constitution.constitution_hash,
+            reason="Add a governed follow up",
+        )
+
+
+def test_nested_primary_rewrites_and_nonmonotonic_amendments_are_rejected() -> None:
+    result = run_demo("provisional")
+    constitution = result.case.constitution
+    assert constitution is not None
+    with pytest.raises(ValidationError, match="cannot rewrite"):
+        create_amendment(
+            amendment_id="amendment_nested_rewrite",
+            classification=AmendmentClassification.EXPLORATORY,
+            author_role=RoleName.RESEARCHER,
+            reason="Attempt a nested primary rewrite",
+            changes={"exploratory.follow_up": {"PRIMARY_HYPOTHESIS": "changed"}},
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+            parent_constitution_hash=constitution.constitution_hash,
+        )
+    nonmonotonic = create_amendment(
+        amendment_id="amendment_nonmonotonic",
+        classification=AmendmentClassification.ADMINISTRATIVE,
+        author_role=RoleName.RESEARCHER,
+        reason="Attempt a nonmonotonic administrative change",
+        changes={"metadata.display_label": "fixture"},
+        created_at=constitution.locked_at,
+        parent_constitution_hash=constitution.constitution_hash,
+    )
+    with pytest.raises(ValidationError, match="strictly append-only"):
+        result.case.model_copy(update={"amendments": (nonmonotonic,)})

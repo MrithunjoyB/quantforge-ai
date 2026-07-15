@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import model_validator
 
 from quantforge.domain.models import (
     EvidenceObject,
     EvidenceReference,
     Identifier,
+    Sha256,
     StrictModel,
     ValidationStatus,
 )
@@ -18,7 +21,8 @@ from quantforge.domain.models import (
 class EvidenceLedgerSnapshot(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     case_id: Identifier
-    constitution_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    experiment_id: Identifier
+    constitution_hash: Sha256
     evidence: tuple[EvidenceObject, ...]
 
     @model_validator(mode="after")
@@ -28,14 +32,21 @@ class EvidenceLedgerSnapshot(StrictModel):
             raise ValueError("evidence ledger contains duplicate identifiers")
         if any(item.constitution_hash != self.constitution_hash for item in self.evidence):
             raise ValueError("evidence ledger contains a foreign constitution hash")
+        if any(item.case_id != self.case_id for item in self.evidence):
+            raise ValueError("evidence ledger contains a foreign case identifier")
+        if any(item.experiment_id != self.experiment_id for item in self.evidence):
+            raise ValueError("evidence ledger contains a foreign experiment identifier")
         return self
 
 
 class EvidenceLedger:
     """Mutation is restricted to validated append; existing objects are never replaced."""
 
-    def __init__(self, *, case_id: str, constitution_hash: str, claim_ids: set[str]) -> None:
+    def __init__(
+        self, *, case_id: str, experiment_id: str, constitution_hash: str, claim_ids: set[str]
+    ) -> None:
         self._case_id = case_id
+        self._experiment_id = experiment_id
         self._constitution_hash = constitution_hash
         self._claim_ids = frozenset(claim_ids)
         self._items: list[EvidenceObject] = []
@@ -46,6 +57,10 @@ class EvidenceLedger:
             raise ValueError("evidence identifiers are append-only and unique")
         if evidence.constitution_hash != self._constitution_hash:
             raise ValueError("evidence is not bound to the locked constitution")
+        if evidence.case_id != self._case_id:
+            raise ValueError("evidence is not bound to the active case")
+        if evidence.experiment_id != self._experiment_id:
+            raise ValueError("evidence is not bound to the active experiment")
         if not set(evidence.claim_ids).issubset(self._claim_ids):
             raise ValueError("evidence cites an unknown claim")
         self._items.append(evidence)
@@ -76,6 +91,7 @@ class EvidenceLedger:
     def snapshot(self) -> EvidenceLedgerSnapshot:
         return EvidenceLedgerSnapshot(
             case_id=self._case_id,
+            experiment_id=self._experiment_id,
             constitution_hash=self._constitution_hash,
             evidence=tuple(self._items),
         )
@@ -86,9 +102,37 @@ class EvidenceLedger:
     ) -> EvidenceLedger:
         ledger = cls(
             case_id=snapshot.case_id,
+            experiment_id=snapshot.experiment_id,
             constitution_hash=snapshot.constitution_hash,
             claim_ids=claim_ids,
         )
         for evidence in snapshot.evidence:
             ledger.append(evidence)
         return ledger
+
+
+def verify_source_artifact(
+    evidence: EvidenceObject, artifact_root: Path, *, max_bytes: int = 2_000_000
+) -> Path:
+    """Verify that a referenced source is a bounded regular file contained by its adapter root."""
+
+    if artifact_root.is_symlink() or not artifact_root.is_dir():
+        raise ValueError("artifact root must be a regular non-symlink directory")
+    candidate = artifact_root / evidence.source_artifact
+    current = artifact_root
+    for part in Path(evidence.source_artifact).parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError("source artifact may not traverse a symlink")
+    if not candidate.is_file() or candidate.stat().st_size > max_bytes:
+        raise ValueError("source artifact must be a bounded regular file")
+    root = artifact_root.resolve(strict=True)
+    resolved = candidate.resolve(strict=True)
+    try:
+        resolved.relative_to(root)
+    except ValueError as error:
+        raise ValueError("source artifact escapes its adapter root") from error
+    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    if digest != evidence.source_artifact_sha256:
+        raise ValueError("source artifact hash mismatch")
+    return resolved

@@ -1,0 +1,434 @@
+{
+  "schema_version": "1.0",
+  "report": "QuantForge AI Phase 1 Independent Audit",
+  "audited_commit": "2e9da09f4470a1c50e756a06ab935d90f1beaa7a",
+  "audit_date": "2026-07-15",
+  "completed_at_utc": "2026-07-15T08:43:46Z",
+  "branch": "main",
+  "decision": {
+    "phase2_may_begin": true,
+    "status": "passed",
+    "verdict": "QUANTFORGE AI PHASE 1 INDEPENDENT AUDIT PASSED — READY FOR PHASE 2",
+    "basis": "All Critical, High, and Medium defects found during independent adversarial review were repaired in Phase 1 scope, regression-tested, and passed the complete release gate. Remaining Low and Informational limitations are explicit Phase 2 boundaries."
+  },
+  "environment": {
+    "operating_system": "macOS 26.5.2 build 25F84 arm64",
+    "timezone": "Asia/Kolkata",
+    "python": "3.12.13",
+    "pip": "26.1.2",
+    "pytest": "9.0.3",
+    "mypy": "1.19.1",
+    "ruff": "0.14.14",
+    "pip_audit": "2.9.0",
+    "clean_environment": "/private/tmp/quantforge-dev-audit-20260715",
+    "clean_runtime_environment": "/private/tmp/quantforge-runtime-audit-20260715"
+  },
+  "repository_boundaries": {
+    "quantforge": {
+      "expected_and_observed_initial_head": "2e9da09f4470a1c50e756a06ab935d90f1beaa7a",
+      "initial_tracked_state": "clean",
+      "remotes": [],
+      "history_rewritten": false,
+      "pushed": false,
+      "release_or_tag_created": false
+    },
+    "protected_engine": {
+      "path": "../cpp-event-driven-backtester",
+      "head_before": "9266f317573e90452ca88c7d30196d8b6d6f21a3",
+      "head_after_precommit_recheck": "9266f317573e90452ca88c7d30196d8b6d6f21a3",
+      "v1_0_0_annotated_tag_object_before": "20ac53c5e4b61ae7b431d5bb263f246e35f8d2a2",
+      "v1_0_0_annotated_tag_object_after_precommit_recheck": "20ac53c5e4b61ae7b431d5bb263f246e35f8d2a2",
+      "v1_0_0_peeled_target_before": "2f86b71dbc9f29dbda861942d8afbb10c04b6625",
+      "v1_0_0_peeled_target_after_precommit_recheck": "2f86b71dbc9f29dbda861942d8afbb10c04b6625",
+      "tag_object_type": "tag",
+      "tracked_diff_before_and_after": "empty",
+      "staged_diff_before_and_after": "empty",
+      "untracked_before_and_after": "empty",
+      "ignored_inventory_count_before_and_after": 16301,
+      "ignored_inventory_sha256_before_and_after": "9f99224e3a34dfd512442f0e0931ca201a896f66265aefa91d2992a09f4e092b",
+      "changes_caused_by_audit": false
+    }
+  },
+  "architecture_assessment": {
+    "result": "pass after repair",
+    "workflow": "A code-owned, immutable transition table defines the exact 12-state order, authorized actor, and permitted audited action. Roles cannot advance state.",
+    "restoration": "Every accepted state is reconstructed from a complete, single-case, semantically validated audit history. Direct construction, model_construct, model_copy, deserialization, CLI validation, and helper paths cannot establish an advanced valid case without its prerequisites and audit.",
+    "authority": "Provider and role outputs are strict immutable domain models. Verdict eligibility is computed only by VerdictPolicy; the Chair can only explain the exact result and exact decisive and contradictory evidence.",
+    "determinism": "No hidden global mutable policy state, network client, shell authority, subprocess path, database, broker, or live-trading capability exists in the package.",
+    "circular_dependencies": "The clean-wheel audit found and repaired an audit/workflow package import cycle by making the public workflow export lazy."
+  },
+  "findings": [
+    {
+      "id": "H-01",
+      "severity": "High",
+      "status": "repaired",
+      "contract": "Workflow-state correctness and role authority",
+      "reproduction": "An advanced TribunalCase could be directly constructed, the Chair could call an otherwise legal transition, and REPRODUCIBILITY_VERIFIED could be reached through generic advance without an explicit follow-up disposition.",
+      "root_cause": "Cross-stage prerequisites and actor/action authority were distributed and incomplete; state restoration did not require equality with replayed history.",
+      "repair": "Added full staged TribunalCase invariants, immutable transition rules, actor/action enforcement, atomic case-plus-audit transitions, explicit skip/complete follow-up operations, and audit-backed StateMachine restoration.",
+      "regression_tests": [
+        "test_transition_actor_authority_is_enforced",
+        "test_transition_prerequisites_are_required",
+        "test_nonapproved_methodology_cannot_reach_human_approval",
+        "test_follow_up_resolution_is_explicit_state_bound_and_authorized",
+        "test_direct_state_construction_and_unaudited_restoration_are_rejected",
+        "test_direct_construction_cannot_bypass_workflow_prerequisites"
+      ]
+    },
+    {
+      "id": "H-02",
+      "severity": "High",
+      "status": "repaired",
+      "contract": "Audit-chain integrity and state restoration",
+      "reproduction": "A second case could be appended; a valid prefix could be accepted; rehashed policy-input changes were not semantically derived from governed state; payloads did not reconstruct the full case.",
+      "root_cause": "The original chain proved byte linkage but not single-case semantic validity, complete-history validity, actor authority, or domain reconstruction.",
+      "repair": "Audit events now retain canonical payloads; verification enforces one case, exact sequence/IDs, strict timestamps, actors/actions, full completion, payload and event hashes, domain timestamps, governed replay, and deterministic policy recomputation. JSONL input rejects truncation, malformed records, symlinks, and suffixes.",
+      "regression_tests": [
+        "test_audit_chain_verifies_reconstructs_and_roundtrips",
+        "test_audit_detects_tampering",
+        "test_audit_rejects_cross_case_append",
+        "test_rehashed_policy_input_tampering_is_rejected_semantically",
+        "test_rehashed_future_domain_timestamp_is_rejected_semantically",
+        "test_audit_input_output_truncation_and_suffix_controls",
+        "test_audit_payload_and_case_update_must_be_identical",
+        "test_case_validation_requires_matching_complete_history"
+      ]
+    },
+    {
+      "id": "H-03",
+      "severity": "High",
+      "status": "repaired",
+      "contract": "Evidence integrity and numerical-claim enforcement",
+      "reproduction": "Evidence could be rebound to another case; a displayed numeric fact could disagree with hashed content; source artifacts were not digest-verified; units and claim/experiment bindings were incomplete.",
+      "root_cause": "Evidence identity covered content bytes but not the complete case/experiment/source lineage or an exact structured-fact equivalence contract.",
+      "repair": "Evidence now binds case, experiment, constitution, claims, content, source path and source digest. Numeric facts must exactly equal canonical facts in hashed content; units are closed and exact; ledger references require validated known evidence and known fact IDs; source files are bounded, contained, regular, nonsymlinked, and digest-matched.",
+      "regression_tests": [
+        "test_numeric_facts_and_units_are_bound_to_hashed_content",
+        "test_numerical_narrative_edge_forms_are_rejected",
+        "test_source_artifact_existence_hash_and_symlink_controls",
+        "existing duplicate/hash/constitution/citation/path validation tests"
+      ]
+    },
+    {
+      "id": "H-04",
+      "severity": "High",
+      "status": "repaired",
+      "contract": "Claim-graph traceability",
+      "reproduction": "Type-invalid edges and cycles were accepted, graph snapshots depended on insertion order, and graph evidence identity and relationship could disagree with the ledger.",
+      "root_cause": "Graph validation checked endpoint existence but lacked a typed edge matrix, acyclicity, semantic uniqueness, canonical ordering, and ledger reconciliation.",
+      "repair": "Added node-specific invariants, a closed edge-type matrix, self-edge/cycle/semantic-duplicate rejection, canonical snapshot sorting, validated final-claim traversal, and exact evidence inventory/hash/status/relationship reconciliation with the ledger.",
+      "regression_tests": [
+        "test_claim_graph_cycles_are_prohibited",
+        "test_graph_snapshot_order_is_canonical",
+        "test_graph_identity_relationship_and_inventory_are_bound_to_ledger",
+        "expanded invalid-edge and traceability tests"
+      ]
+    },
+    {
+      "id": "H-05",
+      "severity": "High",
+      "status": "repaired",
+      "contract": "Verdict-policy correctness and Chair restrictions",
+      "reproduction": "REVISION_REQUESTED and an UNRESOLVED robustness gate could yield a positive verdict; expected hypothesis direction was omitted; fixture flags could influence policy inputs; contradictory evidence and explanation evidence were not fully reconciled.",
+      "root_cause": "The policy truth table and the derivation boundary between reviews, evidence, eligibility, and explanation were incomplete.",
+      "repair": "Made revision and unresolved robustness inconclusive, enforced expected direction, conservative gate precedence, exact decisive/contradictory evidence sets, derivation from replayed reviews and ledger, deterministic policy recomputation, and exact non-escalating Chair output. Added a bounded exhaustive 1458-combination policy test.",
+      "regression_tests": [
+        "test_revision_requested_is_not_a_positive_verdict",
+        "test_hypothesis_direction_is_part_of_policy",
+        "test_bounded_policy_truth_table_is_deterministic_and_conservative",
+        "test_policy_requires_consistent_decisive_and_contradictory_evidence",
+        "test_chair_cannot_upgrade_or_change_verdict",
+        "test_review_summary_cross_field_invariants_are_enforced"
+      ]
+    },
+    {
+      "id": "M-01",
+      "severity": "Medium",
+      "status": "repaired",
+      "contract": "Experiment Constitution immutability and amendment lineage",
+      "reproduction": "A constitution could embed a proposal from another experiment; amendment classification/author rules and nested primary rewrites were incomplete; amendment chronology was not enforced.",
+      "root_cause": "Hash validation existed, but semantic experiment binding and the append-only amendment policy were not complete cross-field invariants.",
+      "repair": "Bound proposal, approval, and constitution experiment identities; enforced approval hash equality, amendment namespaces, recursive forbidden-key checks, role/classification authority, parent hashes, and strictly increasing post-lock amendment timestamps.",
+      "regression_tests": [
+        "test_constitution_rejects_experiment_mismatch",
+        "test_amendment_classification_and_authority_are_enforced",
+        "test_nested_primary_rewrites_and_nonmonotonic_amendments_are_rejected"
+      ]
+    },
+    {
+      "id": "M-02",
+      "severity": "Medium",
+      "status": "repaired",
+      "contract": "Strict models, canonical identity, and defensive file handling",
+      "reproduction": "Pydantic model_construct/model_copy bypassed validation; Decimal negative zero had a second identity; Unicode-equivalent keys could be ambiguous; in-memory JSON lacked the file size bound; temporary output handling was weaker than the security contract.",
+      "root_cause": "Framework escape hatches and serialization/path edge cases were outside the initial happy-path tests.",
+      "repair": "Revalidated construct/copy paths; normalized Unicode NFC with collision rejection; rejected floats/nonfinite/extreme decimals and normalized zero; bounded depth and bytes for memory/file JSON; rejected all symlink path components; used unpredictable same-directory 0600 temporary files and atomic replacement.",
+      "regression_tests": [
+        "test_canonical_unicode_normalization_is_stable_and_collision_safe",
+        "test_safe_parser_applies_size_limit_to_in_memory_input",
+        "test_nonfinite_financial_values_are_rejected",
+        "test_extreme_decimal_magnitude_is_bounded",
+        "test_execution_values_have_scientifically_safe_ranges",
+        "expanded negative-zero, permissions, symlink, control-character, and nesting tests"
+      ]
+    },
+    {
+      "id": "M-03",
+      "severity": "Medium",
+      "status": "repaired",
+      "contract": "Dependency reproducibility and packaging quality",
+      "reproduction": "Development dependencies lacked a fully hashed lock; pytest 9.0.2 was vulnerable as PYSEC-2026-1845; a clean installed wheel failed on an audit/workflow circular import; the returned bundle hash inventory omitted the manifest.",
+      "root_cause": "The original environment and source import order masked consumer-install and development-supply-chain failures.",
+      "repair": "Added a fully transitive hashed development lock and pinned build backend/editable tools; upgraded pytest to 9.0.3; removed the eager workflow import cycle; included the manifest digest; excluded repository audit reports from distributions; verified wheel and sdist contents and final wheel operation outside the source tree.",
+      "regression_tests": [
+        "test_runtime_and_development_locks_are_hash_complete",
+        "test_packaging_metadata_and_editable_build_dependencies_exist",
+        "test_complete_demo_scenarios",
+        "test_cli_run_demo_and_deterministic_repeated_exports",
+        "test_export_manifest_hashes_match_artifacts"
+      ]
+    },
+    {
+      "id": "M-04",
+      "severity": "Medium",
+      "status": "repaired",
+      "contract": "Documentation truthfulness and OpenAI boundary",
+      "reproduction": "Several governance, evidence, security, packaging, and OpenAI-boundary claims were less precise than the implemented limitations and validation behavior.",
+      "root_cause": "Documentation described the intended design more strongly than the original enforcement.",
+      "repair": "Updated README, architecture, governance, constitution, evidence, verdict, security, threat model, ADR 0002, contribution, and changelog documents to match code, failure behavior, synthetic-only scope, lock installation, and provider-neutral authority boundaries. Verified local links and official Agents SDK links.",
+      "regression_tests": [
+        "packaging and CLI command tests",
+        "manual local-link verification",
+        "official-link resolution verification"
+      ]
+    },
+    {
+      "id": "L-01",
+      "severity": "Low",
+      "status": "accepted and documented",
+      "contract": "External audit nonrepudiation",
+      "finding": "The local SHA-256 chain detects accidental or partial tampering but is not signed or externally anchored; an attacker controlling the entire artifact set can replace and rehash a whole case.",
+      "phase2_boundary": "Add an external append-only anchor or signature service without granting it workflow or verdict authority."
+    },
+    {
+      "id": "I-01",
+      "severity": "Informational",
+      "status": "intentional Phase 1 scope",
+      "contract": "Runtime scope",
+      "finding": "There is no live model provider, market-data ingestion, real C++ engine adapter, UI, RAG, database, broker, order submission, network execution, or claim of profitability."
+    },
+    {
+      "id": "I-02",
+      "severity": "Informational",
+      "status": "intentional Phase 1 scope",
+      "contract": "Amendment admission",
+      "finding": "Amendment models and chain invariants are present, but a persisted, audited amendment-admission workflow is deferred. Phase 2 must not silently merge exploratory amendments into a locked primary result."
+    },
+    {
+      "id": "I-03",
+      "severity": "Informational",
+      "status": "mitigated",
+      "contract": "Test ordering",
+      "finding": "pytest-randomly was not locally available and was not added solely for this audit. The complete suite was rerun with test files in reverse order; all 281 cases passed."
+    }
+  ],
+  "model_risk_assessment": {
+    "result": "pass after repair",
+    "all_verdict_classes_reachable": true,
+    "bounded_truth_table_combinations": 1458,
+    "policy_inputs_derived_from_governed_state": true,
+    "opposite_direction_rejected": true,
+    "unresolved_or_missing_critical_gates_cannot_strengthen_verdict": true,
+    "contradictory_evidence_preserved": true,
+    "chair_escalation_possible": false,
+    "synthetic_fixture_name_or_unused_flag_can_force_verdict": false
+  },
+  "security_assessment": {
+    "result": "pass for offline Phase 1 threat model",
+    "malicious_input_controls": [
+      "strict schemas and unknown-field rejection",
+      "full model revalidation including construct/copy paths",
+      "duplicate JSON key, float, nonfinite, depth, and byte limits",
+      "Unicode NFC normalization and key-collision rejection",
+      "bounded decimals and closed units",
+      "relative normalized artifact paths and JSON pointers",
+      "symlink-component, containment, regular-file, size, and digest checks",
+      "0600 atomic output files",
+      "complete semantic audit replay"
+    ],
+    "prompt_injection_surface": "No live model exists. Future provider output remains untrusted and must be converted to strict domain output types before the code-owned workflow can accept it.",
+    "network_required_by_tests": false,
+    "api_key_required": false,
+    "secret_scan": "no known credential patterns found",
+    "source_capability_scan": "no package network client, shell, subprocess, broker, order-submission, or live-trading path",
+    "runtime_dependency_vulnerabilities": 0,
+    "development_dependency_vulnerabilities": 0
+  },
+  "test_quality_assessment": {
+    "result": "pass",
+    "baseline_tests": 227,
+    "final_tests": 281,
+    "skipped_tests": 0,
+    "normal_order_result": "281 passed",
+    "reverse_file_order_result": "281 passed",
+    "overall_branch_aware_coverage_percent": 92.39,
+    "governance_critical_coverage_percent_rounded": 92,
+    "governance_critical_required_percent": 90,
+    "meaningful_negative_coverage": "Actor/state bypass, malformed and rehashed audit histories, hostile JSON/path inputs, evidence/graph lineage, numerical mismatch, policy combinations, package installation, and deterministic bytes are directly asserted."
+  },
+  "dependency_and_packaging": {
+    "python_requirement": ">=3.12",
+    "direct_runtime_dependencies": [
+      "pydantic==2.12.5"
+    ],
+    "runtime_lock": "fully transitive and hashed",
+    "development_lock": "fully transitive and hashed, including build tools",
+    "runtime_pip_audit": "No known vulnerabilities found",
+    "development_pip_audit": "No known vulnerabilities found",
+    "sdist": {
+      "path": "dist/quantforge_ai-0.1.0.tar.gz",
+      "sha256": "2fe638c66125751bd118fedab26e46198f6b161dc47c1ecddeb87b4ffe263b91",
+      "build": "pass"
+    },
+    "wheel": {
+      "path": "dist/quantforge_ai-0.1.0-py3-none-any.whl",
+      "sha256": "99c41e100ba810974a6130bef400251f761620cd16794cde260b045e36d68566",
+      "build": "pass",
+      "outside_source_tree_install": "pass",
+      "cli_entry_point": "pass",
+      "case_validation": "pass",
+      "audit_replay": "pass",
+      "pip_check": "No broken requirements found"
+    },
+    "content_hygiene": "pass; no caches, environments, repository audit reports, local absolute paths, secrets, or unintended build outputs",
+    "license_and_notice": "present in wheel and sdist",
+    "metadata": "accurate for Phase 1 scope"
+  },
+  "determinism": {
+    "method": "Each of three offline scenarios was exported twice from the locked clean development environment; diff -rq compared all five files per bundle. The final installed wheel reproduced the governed CLI path.",
+    "comparisons": 30,
+    "byte_differences": 0,
+    "scenarios": {
+      "provisional": {
+        "verdict": "PROVISIONALLY_SUPPORTED",
+        "audit.jsonl": "04a7eb1fad1bbe2bd7f989e42499025eb46e27cd47d9542882e57e2a21eca37a",
+        "bundle_manifest.json": "ba2940d86ed3e4a60fa409c134daef3bd72de170ea3d1678d8a9fddd9fb296ea",
+        "case.json": "8331c4d9d743bc62f1ace59624ee4df2616aa539203baafdf14bde21bd3d3846",
+        "claim_graph.json": "427de4e0e6c96da7266941089d0f5118c90532998107f2898fedafdb99f2432b",
+        "evidence_ledger.json": "5d81de034095ea10fb76965706d666a315d752e6a9d5f3e5cd59fe9e277db993"
+      },
+      "fragile": {
+        "verdict": "FRAGILE",
+        "audit.jsonl": "b2dff48e4104b3dd44c3a8e570fbe1fdc44248c21b22a2bf1d05ed8389b6cb01",
+        "bundle_manifest.json": "69c583816713ed8b6135f34b572cbd4f1c8f175dfe292b5aff2f411e664642ac",
+        "case.json": "b4229fdd0e47fec0a61c3bd64cab2eaa59017f918e3d26c767b31b388eec79d4",
+        "claim_graph.json": "f921df1ffcac4a0d09c2fb15950f9f3b5b01295d3811d97d3ebfcd9a38d7675d",
+        "evidence_ledger.json": "4a7c6a180a27084608cacb049a04c0e60db7a7cdf8cbb535ebc4a678897c6a62"
+      },
+      "inconclusive": {
+        "verdict": "INCONCLUSIVE",
+        "audit.jsonl": "a6e3aa6329918c41f117c53e3a106965138426071264fc0ffb607eca264424e0",
+        "bundle_manifest.json": "61a928cff2d7d2b12e9fb68bfe9f902c6660faa95b0f28c0534b73d5f03f50b9",
+        "case.json": "b4cc9a45e7862808fb523ad99017f9939296bec0c0d1d08faca9c17b55889dae",
+        "claim_graph.json": "364fdd3af2d1810a08e6ca7d75c877d88e6fae2628f4abab0c51f28a8404b6f9",
+        "evidence_ledger.json": "f7bf27d7a71b0b2fbcf38c57407e6c08f051cb71186b6039163f5f8ad0c7b8ef"
+      }
+    }
+  },
+  "documentation_assessment": {
+    "result": "pass after repair",
+    "reviewed": [
+      "README.md",
+      "docs/ARCHITECTURE.md",
+      "docs/GOVERNANCE.md",
+      "docs/EXPERIMENT_CONSTITUTION.md",
+      "docs/EVIDENCE_MODEL.md",
+      "docs/VERDICT_POLICY.md",
+      "docs/SECURITY_MODEL.md",
+      "docs/THREAT_MODEL.md",
+      "docs/ENGINE_INTEGRATION_CONTRACT.md",
+      "docs/adr/0001-code-driven-tribunal.md",
+      "docs/adr/0002-openai-agents-boundary.md",
+      "docs/adr/0003-canonical-json.md",
+      "CONTRIBUTING.md",
+      "CHANGELOG.md",
+      "SECURITY.md"
+    ],
+    "local_links": "pass",
+    "official_openai_links": "pass",
+    "unsupported_capability_or_profitability_claims": "none"
+  },
+  "openai_boundary": {
+    "result": "pass",
+    "live_integration_added": false,
+    "package_dependency_added": false,
+    "future_design": "Use provider-neutral adapters with structured output types, immediately revalidate into strict QuantForge domain models, and retain code orchestration for state, evidence validation, and verdict policy.",
+    "provider_may_not_control": [
+      "workflow state",
+      "human approval",
+      "evidence truth or validation status",
+      "constitution identity",
+      "verdict eligibility",
+      "Chair escalation"
+    ],
+    "official_sources": [
+      "https://openai.github.io/openai-agents-python/quickstart/",
+      "https://openai.github.io/openai-agents-python/agents/#output-types",
+      "https://openai.github.io/openai-agents-python/multi_agent/#orchestrating-via-code"
+    ]
+  },
+  "validation_commands": [
+    {
+      "command": "PYTHON=/private/tmp/quantforge-dev-audit-20260715/bin/python ./scripts/quality.sh",
+      "result": "pass: format, Ruff, strict mypy, 281 tests, 92.39% branch-aware coverage, 92% rounded governance-critical coverage with 90% minimum, secret scan, sdist and wheel"
+    },
+    {
+      "command": "pytest with all test files listed in reverse order",
+      "result": "281 passed in 16.17s; no skips"
+    },
+    {
+      "command": "pip install --require-hashes -r requirements-dev.lock in fresh Python 3.12 venv",
+      "result": "pass; exact hashed set installed including pytest 9.0.3"
+    },
+    {
+      "command": "pip-audit -r requirements.lock and requirements-dev.lock --disable-pip",
+      "result": "No known vulnerabilities found for either lock"
+    },
+    {
+      "command": "python -m build --no-isolation",
+      "result": "Successfully built quantforge_ai-0.1.0.tar.gz and quantforge_ai-0.1.0-py3-none-any.whl"
+    },
+    {
+      "command": "fresh runtime hashed install, wheel --no-deps install, quantforge case run-demo/validate, quantforge audit verify, pip check outside repository",
+      "result": "pass; valid case, 12-event audit, no broken requirements"
+    },
+    {
+      "command": "two exports for each scenario followed by diff -rq and SHA-256 inventory",
+      "result": "30 of 30 file comparisons byte-identical"
+    },
+    {
+      "command": "static source capability and credential scans plus distribution inventory/content scans",
+      "result": "pass"
+    },
+    {
+      "command": "official OpenAI Agents SDK and local documentation link checks",
+      "result": "pass"
+    }
+  ],
+  "remaining_limitations": [
+    "The audit chain is locally tamper-evident, not signed or externally anchored.",
+    "All evidence and financial observations are synthetic validation fixtures; no empirical performance or profitability conclusion is supported.",
+    "The real engine remains deliberately unintegrated and immutable for this phase.",
+    "There is no live provider, retrieval, persistence, UI, network, broker, or execution capability.",
+    "Amendment admission is not yet a persisted audited workflow.",
+    "Python support is explicitly 3.12 or newer and was verified on 3.12.13/macOS arm64."
+  ],
+  "recommended_phase2_boundaries": [
+    "Keep the C++ engine adapter read-only and require explicit binary/config/input/output identities plus schema validation.",
+    "Treat all engine, provider, retrieved, and user-supplied artifacts as hostile until strict schema, provenance, size, path, and digest checks pass.",
+    "Preserve the code-owned transition table, explicit human approval, constitution lock, evidence ledger, semantic audit replay, and pure VerdictPolicy.",
+    "Use structured provider outputs only as proposals or reviews; never grant a provider filesystem, shell, network-routing, state-transition, evidence-validation, or verdict authority.",
+    "Add externally anchored audit signatures and an explicit audited amendment-admission path before multi-user or durable operation.",
+    "Do not add broker connectivity, order submission, live trading, or profitability claims in Phase 2."
+  ]
+}

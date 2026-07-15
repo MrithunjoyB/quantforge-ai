@@ -1,6 +1,6 @@
 # QuantForge AI
 
-**An autonomous research tribunal for falsifiable, reproducible quantitative claims.**
+**A governed research tribunal for falsifiable, reproducible quantitative claims.**
 
 Quantitative research often fails because a result is allowed to outrun its protocol, evidence,
 or reproducibility. QuantForge asks one governed question: **Does this quantitative claim deserve
@@ -27,10 +27,11 @@ Python 3.12 or newer is required.
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/python -m pip install --require-hashes -r requirements.lock
-.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
+.venv/bin/python -m pip install -e . --no-deps --no-build-isolation
 .venv/bin/quantforge case run-demo --scenario fragile
-.venv/bin/quantforge case inspect quantforge-demo-fragile/case.json
+.venv/bin/quantforge case validate quantforge-demo-fragile/case.json \
+  --audit-file quantforge-demo-fragile/audit.jsonl
 .venv/bin/quantforge audit verify quantforge-demo-fragile/audit.jsonl
 ```
 
@@ -40,10 +41,12 @@ The complete demo bundle contains canonical `case.json`, `claim_graph.json`,
 
 ## Evidence and verdict control
 
-Numerical findings are structured references to facts inside validated evidence objects. Free-form
+Numerical findings are structured references to facts inside validated evidence objects. Facts must
+exactly match the structured values inside hashed content; units are closed and typed. Free-form
 numerical assertions are rejected at reviewer and Chair boundaries. Every evidence object is bound
-to the locked constitution and its content hash. Every substantive final claim must trace through
-the claim graph to evidence.
+to its case, experiment, locked constitution, content hash, and source-artifact digest. Every
+substantive final claim must trace through the typed, acyclic claim graph to validated ledger
+evidence.
 
 `VerdictPolicy` alone computes `SUPPORTED`, `PROVISIONALLY_SUPPORTED`, `INCONCLUSIVE`, `FRAGILE`, or
 `REJECTED`. The Chair receives that result as input and is technically prevented from strengthening
@@ -56,11 +59,12 @@ scripts/quality.sh
 ```
 
 Runtime dependencies are transitively pinned with distribution hashes in `requirements.lock`.
-Development tools are exact direct pins in `pyproject.toml` and `requirements-dev.in`.
+Development and build dependencies are transitively pinned with hashes in `requirements-dev.lock`;
+`requirements-dev.in` is its reviewed input.
 
 The quality script runs formatting checks, lint, strict type checking, the full test suite with
-branch coverage, package build metadata checks, a local secret scan, and dependency audit when the
-auditor is available.
+branch coverage, package build metadata checks, a local secret scan, and package builds. Set
+`RUN_DEPENDENCY_AUDIT=1` to add the vulnerability-service-backed runtime dependency audit.
 
 ## Project status and authorship
 

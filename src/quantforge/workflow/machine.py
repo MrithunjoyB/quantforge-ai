@@ -16,24 +16,14 @@ from quantforge.domain.models import (
     WorkflowState,
     validated_model_update,
 )
-
-_NEXT: dict[WorkflowState, WorkflowState] = {
-    WorkflowState.CLAIM_RECEIVED: WorkflowState.RESEARCHER_PROTOCOL_PROPOSED,
-    WorkflowState.RESEARCHER_PROTOCOL_PROPOSED: WorkflowState.METHODOLOGY_REVIEWED,
-    WorkflowState.METHODOLOGY_REVIEWED: WorkflowState.HUMAN_APPROVAL,
-    WorkflowState.HUMAN_APPROVAL: WorkflowState.CONSTITUTION_LOCKED,
-    WorkflowState.CONSTITUTION_LOCKED: WorkflowState.EXPERIMENT_EXECUTED,
-    WorkflowState.EXPERIMENT_EXECUTED: WorkflowState.STATISTICS_REVIEWED,
-    WorkflowState.STATISTICS_REVIEWED: WorkflowState.ADVERSARIAL_REVIEWED,
-    WorkflowState.ADVERSARIAL_REVIEWED: WorkflowState.OPTIONAL_FOLLOW_UP,
-    WorkflowState.OPTIONAL_FOLLOW_UP: WorkflowState.REPRODUCIBILITY_VERIFIED,
-    WorkflowState.REPRODUCIBILITY_VERIFIED: WorkflowState.VERDICT_ELIGIBILITY_COMPUTED,
-    WorkflowState.VERDICT_ELIGIBILITY_COMPUTED: WorkflowState.CHAIR_EXPLANATION,
-}
+from quantforge.workflow.rules import NEXT_STATE, require_transition_authority
 
 
 class StateMachine:
     def __init__(self, case: TribunalCase, audit_log: AuditLog) -> None:
+        restored = audit_log.replay_case(require_complete=False)
+        if restored != case:
+            raise ValueError("state machine case does not match its complete audited history")
         self.case = case
         self.audit_log = audit_log
 
@@ -47,13 +37,16 @@ class StateMachine:
         payload: Any,
         updates: dict[str, Any] | None = None,
     ) -> TribunalCase:
-        expected = _NEXT.get(self.case.state)
+        expected = NEXT_STATE.get(self.case.state)
         if target is not expected:
             raise ValueError(f"illegal workflow transition: {self.case.state} -> {target}")
+        if target is WorkflowState.REPRODUCIBILITY_VERIFIED:
+            raise ValueError("use an explicit follow-up completion or skip operation")
+        require_transition_authority(self.case.state, target, actor, action)
         changes = dict(updates or {})
         self._validate_prerequisites(target, changes)
         changes["state"] = target
-        self.case = validated_model_update(self.case, **changes)
+        new_case = validated_model_update(self.case, **changes)
         self.audit_log.append(
             timestamp=timestamp,
             case_id=self.case.case_id,
@@ -61,7 +54,9 @@ class StateMachine:
             actor=actor,
             action=action,
             payload=payload,
+            expected_case=new_case,
         )
+        self.case = new_case
         return self.case
 
     def skip_follow_up(
@@ -76,17 +71,72 @@ class StateMachine:
             raise ValueError("follow-up can be skipped only from OPTIONAL_FOLLOW_UP")
         if not reason.strip():
             raise ValueError("follow-up skip requires an explicit reason")
-        return self.advance(
-            WorkflowState.REPRODUCIBILITY_VERIFIED,
+        return self._record_follow_up(
+            disposition="skipped",
             actor=actor,
-            action="skip_follow_up",
+            reason=reason,
             timestamp=timestamp,
-            payload={"disposition": "skipped", "reason": reason},
-            updates={
-                "follow_up_disposition": "skipped",
-                "reproducibility_review": reproducibility_review,
-            },
+            reproducibility_review=reproducibility_review,
         )
+
+    def complete_follow_up(
+        self,
+        *,
+        actor: RoleName,
+        reason: str,
+        timestamp: datetime,
+        reproducibility_review: ReproducibilityReview,
+    ) -> TribunalCase:
+        return self._record_follow_up(
+            disposition="completed",
+            actor=actor,
+            reason=reason,
+            timestamp=timestamp,
+            reproducibility_review=reproducibility_review,
+        )
+
+    def _record_follow_up(
+        self,
+        *,
+        disposition: str,
+        actor: RoleName,
+        reason: str,
+        timestamp: datetime,
+        reproducibility_review: ReproducibilityReview,
+    ) -> TribunalCase:
+        if self.case.state is not WorkflowState.OPTIONAL_FOLLOW_UP:
+            raise ValueError("follow-up can be resolved only from OPTIONAL_FOLLOW_UP")
+        if not reason.strip():
+            raise ValueError("follow-up disposition requires an explicit reason")
+        action = "skip_follow_up" if disposition == "skipped" else "complete_follow_up"
+        require_transition_authority(
+            self.case.state,
+            WorkflowState.REPRODUCIBILITY_VERIFIED,
+            actor,
+            action,
+        )
+        new_case = validated_model_update(
+            self.case,
+            state=WorkflowState.REPRODUCIBILITY_VERIFIED,
+            follow_up_disposition=disposition,
+            reproducibility_review=reproducibility_review,
+        )
+        payload = {
+            "disposition": disposition,
+            "reason": reason,
+            "reproducibility_review": reproducibility_review,
+        }
+        self.audit_log.append(
+            timestamp=timestamp,
+            case_id=self.case.case_id,
+            workflow_state=WorkflowState.REPRODUCIBILITY_VERIFIED,
+            actor=actor,
+            action=action,
+            payload=payload,
+            expected_case=new_case,
+        )
+        self.case = new_case
+        return self.case
 
     def _validate_prerequisites(self, target: WorkflowState, updates: dict[str, Any]) -> None:
         if target is WorkflowState.HUMAN_APPROVAL:

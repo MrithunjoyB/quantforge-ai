@@ -27,8 +27,25 @@ def test_complete_demo_scenarios(scenario: str, verdict: Verdict, tmp_path: Path
     assert result.case.verdict_eligibility.verdict is verdict
     output = tmp_path / scenario
     hashes = export_demo(result, output)
-    assert set(hashes) == {"case.json", "claim_graph.json", "evidence_ledger.json", "audit.jsonl"}
-    assert main(["case", "validate", str(output / "case.json")]) == 0
+    assert set(hashes) == {
+        "case.json",
+        "claim_graph.json",
+        "evidence_ledger.json",
+        "audit.jsonl",
+        "bundle_manifest.json",
+    }
+    assert (
+        main(
+            [
+                "case",
+                "validate",
+                str(output / "case.json"),
+                "--audit-file",
+                str(output / "audit.jsonl"),
+            ]
+        )
+        == 0
+    )
     assert main(["case", "inspect", str(output / "case.json")]) == 0
     assert main(["audit", "verify", str(output / "audit.jsonl")]) == 0
 
@@ -62,7 +79,13 @@ def test_cli_run_demo_and_deterministic_repeated_exports(tmp_path: Path) -> None
         )
         == 0
     )
-    for name in ("case.json", "claim_graph.json", "evidence_ledger.json", "audit.jsonl"):
+    for name in (
+        "case.json",
+        "claim_graph.json",
+        "evidence_ledger.json",
+        "audit.jsonl",
+        "bundle_manifest.json",
+    ):
         assert (
             hashlib.sha256((first / name).read_bytes()).digest()
             == hashlib.sha256((second / name).read_bytes()).digest()
@@ -74,11 +97,33 @@ def test_cli_rejects_malformed_case_and_audit(
 ) -> None:
     case = tmp_path / "case.json"
     case.write_text('{"case_id":"case_bad","unknown":true}', encoding="utf-8")
-    assert main(["case", "validate", str(case)]) == 2
-    assert "error:" in capsys.readouterr().err
     audit = tmp_path / "audit.jsonl"
     audit.write_text("not json\n", encoding="utf-8")
+    assert main(["case", "validate", str(case), "--audit-file", str(audit)]) == 2
+    assert "error:" in capsys.readouterr().err
     assert main(["audit", "verify", str(audit)]) == 2
+
+
+def test_case_validation_requires_matching_complete_history(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    export_demo(run_demo("provisional"), first)
+    export_demo(run_demo("fragile"), second)
+    assert (
+        main(
+            [
+                "case",
+                "validate",
+                str(first / "case.json"),
+                "--audit-file",
+                str(second / "audit.jsonl"),
+            ]
+        )
+        == 2
+    )
+    assert "does not match" in capsys.readouterr().err
 
 
 def test_default_demo_output_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,4 +150,7 @@ def test_export_manifest_hashes_match_artifacts(tmp_path: Path) -> None:
     assert hashes["evidence_ledger.json"] == canonical_sha256(result.evidence_ledger.snapshot())
     assert hashes["audit.jsonl"] == canonical_sha256(result.audit_log.events)
     manifest = safe_load_json(output / "bundle_manifest.json")
-    assert manifest["artifacts"] == hashes
+    assert manifest["artifacts"] == {
+        name: digest for name, digest in hashes.items() if name != "bundle_manifest.json"
+    }
+    assert hashes["bundle_manifest.json"] == canonical_sha256(manifest)

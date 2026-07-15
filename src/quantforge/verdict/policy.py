@@ -3,39 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from quantforge.domain.models import (
     CorrectedInference,
     EvidenceReference,
+    GateStatus,
     ReproducibilityStatus,
     ReviewDecision,
+    Sensitivity,
+    Stability,
     StrictModel,
     ValidationStatus,
     Verdict,
     VerdictEligibility,
 )
-
-
-class GateStatus(StrEnum):
-    PASS = "pass"  # noqa: S105 - policy gate status, not a credential
-    FAIL = "fail"
-    UNRESOLVED = "unresolved"
-
-
-class Sensitivity(StrEnum):
-    LOW = "low"
-    MODERATE = "moderate"
-    HIGH = "high"
-
-
-class Stability(StrEnum):
-    STABLE = "stable"
-    MIXED = "mixed"
-    UNSTABLE = "unstable"
 
 
 class VerdictInputs(StrictModel):
@@ -44,6 +28,7 @@ class VerdictInputs(StrictModel):
     primary_experiment_complete: bool
     evidence_validation_statuses: tuple[ValidationStatus, ...] = Field(min_length=1)
     corrected_inference: CorrectedInference
+    expected_direction: Literal["positive", "negative", "two_sided"]
     effect_direction: Literal["positive", "negative", "null", "mixed"]
     practical_significance: bool
     robustness_status: GateStatus
@@ -53,9 +38,21 @@ class VerdictInputs(StrictModel):
     concentration_risk: Sensitivity
     reproducibility_status: ReproducibilityStatus
     unresolved_critical_findings: bool
-    contradictory_evidence: bool
+    contradictory_evidence: tuple[EvidenceReference, ...] = ()
     unresolved_noncritical_limitations: bool
-    decisive_evidence: tuple[EvidenceReference, ...]
+    decisive_evidence: tuple[EvidenceReference, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def evidence_sets_are_consistent(self) -> VerdictInputs:
+        decisive = {reference.evidence_id for reference in self.decisive_evidence}
+        contradictory = {reference.evidence_id for reference in self.contradictory_evidence}
+        if len(decisive) != len(self.decisive_evidence):
+            raise ValueError("decisive evidence references must be unique")
+        if len(contradictory) != len(self.contradictory_evidence):
+            raise ValueError("contradictory evidence references must be unique")
+        if not contradictory.issubset(decisive):
+            raise ValueError("contradictory evidence must also be decisive evidence")
+        return self
 
 
 class VerdictPolicy:
@@ -73,31 +70,41 @@ class VerdictPolicy:
             verdict = Verdict.REJECTED
             reasons.append("methodology rejection or unresolved critical finding")
         elif (
-            not inputs.primary_experiment_complete
+            inputs.methodology_status is ReviewDecision.REVISION_REQUESTED
+            or not inputs.primary_experiment_complete
             or not inputs.evidence_validation_statuses
             or any(
                 status is not ValidationStatus.VALIDATED
                 for status in inputs.evidence_validation_statuses
             )
+            or inputs.robustness_status is GateStatus.UNRESOLVED
             or inputs.reproducibility_status is not ReproducibilityStatus.VERIFIED
         ):
             verdict = Verdict.INCONCLUSIVE
-            reasons.append("experiment, evidence integrity, or reproducibility gate is incomplete")
+            reasons.append(
+                "methodology, experiment, evidence integrity, or reproducibility gate is incomplete"
+            )
         elif (
             inputs.corrected_inference is not CorrectedInference.PASS
-            or inputs.effect_direction != "positive"
             or not inputs.practical_significance
+            or inputs.effect_direction in {"null", "mixed"}
         ):
             verdict = Verdict.INCONCLUSIVE
             reasons.append(
                 "corrected inference, direction, or practical significance is unresolved"
             )
         elif (
+            inputs.expected_direction == "positive" and inputs.effect_direction == "negative"
+        ) or (inputs.expected_direction == "negative" and inputs.effect_direction == "positive"):
+            verdict = Verdict.REJECTED
+            reasons.append("validated effect direction contradicts the primary hypothesis")
+        elif (
             inputs.robustness_status is GateStatus.FAIL
             or inputs.cost_sensitivity is Sensitivity.HIGH
             or inputs.parameter_stability is Stability.UNSTABLE
             or inputs.regime_stability is Stability.UNSTABLE
             or inputs.concentration_risk is Sensitivity.HIGH
+            or bool(inputs.contradictory_evidence)
         ):
             verdict = Verdict.FRAGILE
             reasons.append(
@@ -127,5 +134,6 @@ class VerdictPolicy:
             verdict=verdict,
             decisive_reasons=tuple(reasons),
             decisive_evidence=inputs.decisive_evidence,
+            contradictory_evidence=inputs.contradictory_evidence,
             computed_at=computed_at,
         )

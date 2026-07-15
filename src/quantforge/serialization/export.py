@@ -10,9 +10,13 @@ from quantforge.workflow.demo import DemoResult
 
 
 def export_demo(result: DemoResult, output_directory: Path) -> dict[str, str]:
+    result.audit_log.verify(require_complete=True)
+    if result.audit_log.replay_case() != result.case:
+        raise ValueError("case export does not match its complete audit history")
+    result.claim_graph.validate_against_ledger(result.evidence_ledger)
     if output_directory.exists() and output_directory.is_symlink():
         raise ValueError("output directory cannot be a symlink")
-    output_directory.mkdir(parents=True, exist_ok=True)
+    output_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     artifacts = {
         "case.json": result.case,
         "claim_graph.json": result.claim_graph.snapshot(),
@@ -31,4 +35,5 @@ def export_demo(result: DemoResult, output_directory: Path) -> dict[str, str]:
         "classification": "synthetic_validation_only",
     }
     safe_write_json(output_directory / "bundle_manifest.json", manifest)
+    hashes["bundle_manifest.json"] = canonical_sha256(manifest)
     return hashes

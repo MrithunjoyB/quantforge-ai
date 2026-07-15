@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from importlib import resources
+from pathlib import Path
 
 from quantforge.adapters.mock import MockEvidenceAdapter, MockRoleProvider, load_scenario
 from quantforge.audit import AuditLog
@@ -11,13 +13,15 @@ from quantforge.domain.constitution import create_human_approval, lock_constitut
 from quantforge.domain.models import (
     ClaimScope,
     EvidenceReference,
+    EvidenceRelationship,
+    FindingSeverity,
     ResearchClaim,
     RoleName,
     TribunalCase,
     WorkflowState,
 )
 from quantforge.evidence.graph import ClaimGraph, EdgeType, GraphEdge, GraphNode, NodeType
-from quantforge.evidence.ledger import EvidenceLedger
+from quantforge.evidence.ledger import EvidenceLedger, verify_source_artifact
 from quantforge.roles.contracts import RoleProvider
 from quantforge.verdict.policy import VerdictInputs, VerdictPolicy
 from quantforge.workflow.machine import StateMachine
@@ -60,7 +64,14 @@ def _build_graph(case: TribunalCase, ledger: EvidenceLedger) -> ClaimGraph:
         )
     )
     for index, evidence in enumerate(ledger.snapshot().evidence, start=1):
-        graph.add_node(GraphNode(node_id=evidence.evidence_id, node_type=NodeType.EVIDENCE))
+        graph.add_node(
+            GraphNode(
+                node_id=evidence.evidence_id,
+                node_type=NodeType.EVIDENCE,
+                evidence_sha256=evidence.content_sha256,
+                evidence_validation_status=evidence.validation_status,
+            )
+        )
         graph.add_edge(
             GraphEdge(
                 edge_id=f"edge_{index:03d}_{case.case_id}",
@@ -70,6 +81,7 @@ def _build_graph(case: TribunalCase, ledger: EvidenceLedger) -> ClaimGraph:
             )
         )
     graph.validate_final_claim_traceability()
+    graph.validate_against_ledger(ledger)
     return graph
 
 
@@ -158,16 +170,20 @@ def run_demo(scenario: str) -> DemoResult:
 
     ledger = EvidenceLedger(
         case_id=machine.case.case_id,
+        experiment_id=proposal.experiment_id,
         constitution_hash=constitution.constitution_hash,
         claim_ids={claim.claim_id},
     )
     evidence_items = MockEvidenceAdapter(fixture).load(
         claim=claim,
+        case_id=machine.case.case_id,
         experiment_id=proposal.experiment_id,
         constitution_hash=constitution.constitution_hash,
         created_at=clock.next(),
     )
+    artifact_root = Path(str(resources.files("quantforge.adapters")))
     for evidence in evidence_items:
+        verify_source_artifact(evidence, artifact_root)
         ledger.append(evidence)
     machine.advance(
         WorkflowState.EXPERIMENT_EXECUTED,
@@ -226,22 +242,47 @@ def run_demo(scenario: str) -> DemoResult:
         for item in evidence_items
     )
     ledger.validate_references(decisive)
+    contradictory = tuple(
+        EvidenceReference(
+            evidence_id=item.evidence_id,
+            numeric_fact_ids=tuple(fact.fact_id for fact in item.numeric_facts),
+        )
+        for item in evidence_items
+        if item.relationship is EvidenceRelationship.CONTRADICTS
+    )
+    for reference in contradictory:
+        evidence = ledger.validate_reference(reference)
+        if evidence.relationship is not EvidenceRelationship.CONTRADICTS:
+            raise ValueError("contradictory reference does not identify contradictory evidence")
+    findings = (
+        *methodology.findings,
+        *statistical.findings,
+        *adversarial.findings,
+        *reproducibility.findings,
+    )
     inputs = VerdictInputs(
-        methodology_status=fixture.methodology_decision,
+        methodology_status=methodology.decision,
         primary_experiment_complete=True,
         evidence_validation_statuses=tuple(item.validation_status for item in evidence_items),
-        corrected_inference=fixture.corrected_inference,
-        effect_direction=fixture.effect_direction,
-        practical_significance=fixture.practical_significance,
-        robustness_status=fixture.robustness_status,
-        cost_sensitivity=fixture.cost_sensitivity,
-        parameter_stability=fixture.parameter_stability,
-        regime_stability=fixture.regime_stability,
-        concentration_risk=fixture.concentration_risk,
-        reproducibility_status=fixture.reproducibility_status,
-        unresolved_critical_findings=fixture.unresolved_critical_findings,
-        contradictory_evidence=fixture.contradictory_evidence,
-        unresolved_noncritical_limitations=fixture.unresolved_noncritical_limitations,
+        corrected_inference=statistical.corrected_inference,
+        expected_direction=proposal.primary_hypothesis.expected_direction,
+        effect_direction=statistical.effect_direction,
+        practical_significance=statistical.practical_significance,
+        robustness_status=adversarial.robustness_status,
+        cost_sensitivity=adversarial.cost_sensitivity,
+        parameter_stability=adversarial.parameter_stability,
+        regime_stability=adversarial.regime_stability,
+        concentration_risk=adversarial.concentration_risk,
+        reproducibility_status=reproducibility.status,
+        unresolved_critical_findings=any(
+            finding.severity is FindingSeverity.CRITICAL and not finding.resolved
+            for finding in findings
+        ),
+        contradictory_evidence=contradictory,
+        unresolved_noncritical_limitations=any(
+            finding.severity is FindingSeverity.NONCRITICAL and not finding.resolved
+            for finding in findings
+        ),
         decisive_evidence=decisive,
     )
     eligibility = VerdictPolicy.compute(
@@ -272,5 +313,5 @@ def run_demo(scenario: str) -> DemoResult:
     )
 
     graph = _build_graph(machine.case, ledger)
-    audit.verify()
+    audit.verify(require_complete=True)
     return DemoResult(machine.case, ledger, graph, audit)

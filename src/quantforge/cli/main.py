@@ -36,6 +36,7 @@ def _build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--output-dir", type=Path)
     validate = case_commands.add_parser("validate")
     validate.add_argument("case_file", type=Path)
+    validate.add_argument("--audit-file", type=Path, required=True)
     inspect = case_commands.add_parser("inspect")
     inspect.add_argument("case_file", type=Path)
     audit = commands.add_parser("audit")
@@ -71,6 +72,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "case" and args.case_command in {"validate", "inspect"}:
             case = _load_case(args.case_file)
             if args.case_command == "validate":
+                log = AuditLog.read_jsonl(args.audit_file)
+                if log.replay_case() != case:
+                    raise ValueError("case snapshot does not match its complete audit history")
                 print(canonical_json({"case_id": case.case_id, "valid": True}))
             else:
                 print(
@@ -92,7 +96,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             log = AuditLog.read_jsonl(args.audit_file)
             print(canonical_json({"events": len(log.events), "valid": True}))
             return 0
-    except (OSError, ValueError, ValidationError) as error:
+    except (OSError, PermissionError, TypeError, ValueError, ValidationError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 2

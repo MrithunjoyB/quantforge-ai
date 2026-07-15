@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from quantforge.domain.models import EvidenceObject, TribunalCase
+from quantforge.domain.models import EvidenceObject, ResearchClaim, TribunalCase, WorkflowState
 from quantforge.serialization.canonical import canonical_json
 from quantforge.workflow.demo import run_demo
 
@@ -47,3 +47,23 @@ def test_case_roundtrip_uses_no_floats_or_absolute_paths() -> None:
     assert "OPENAI_API_KEY" not in payload
     restored = TribunalCase.model_validate_json(payload)
     assert restored == run_demo("provisional").case
+
+
+def test_direct_construction_cannot_bypass_workflow_prerequisites(
+    simple_claim: ResearchClaim,
+) -> None:
+    with pytest.raises(ValidationError, match="requires proposal"):
+        TribunalCase(
+            case_id="case_state_bypass",
+            state=WorkflowState.CHAIR_EXPLANATION,
+            claim=simple_claim,
+        )
+    with pytest.raises(ValidationError, match="requires proposal"):
+        TribunalCase.model_construct(
+            case_id="case_construct_bypass",
+            state=WorkflowState.CHAIR_EXPLANATION,
+            claim=simple_claim,
+        )
+    complete = run_demo("provisional").case
+    with pytest.raises(ValidationError, match="future field"):
+        complete.model_copy(update={"state": WorkflowState.CLAIM_RECEIVED})

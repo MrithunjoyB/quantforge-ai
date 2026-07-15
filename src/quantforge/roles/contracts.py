@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Protocol
 
 from quantforge.domain.models import (
@@ -33,14 +34,16 @@ class RoleAction(StrEnum):
     ISSUE_TRADING_INSTRUCTION = "issue_trading_instruction"
 
 
-_ALLOWED: dict[RoleName, frozenset[RoleAction]] = {
-    RoleName.RESEARCHER: frozenset({RoleAction.PROPOSE_PROTOCOL}),
-    RoleName.METHODOLOGY_AUDITOR: frozenset({RoleAction.REVIEW_METHODOLOGY}),
-    RoleName.STATISTICAL_REVIEWER: frozenset({RoleAction.REVIEW_STATISTICS}),
-    RoleName.ADVERSARIAL_REVIEWER: frozenset({RoleAction.REQUEST_CHALLENGE}),
-    RoleName.REPRODUCIBILITY_REVIEWER: frozenset({RoleAction.REVIEW_REPRODUCIBILITY}),
-    RoleName.TRIBUNAL_CHAIR: frozenset({RoleAction.EXPLAIN_VERDICT}),
-}
+_ALLOWED = MappingProxyType(
+    {
+        RoleName.RESEARCHER: frozenset({RoleAction.PROPOSE_PROTOCOL}),
+        RoleName.METHODOLOGY_AUDITOR: frozenset({RoleAction.REVIEW_METHODOLOGY}),
+        RoleName.STATISTICAL_REVIEWER: frozenset({RoleAction.REVIEW_STATISTICS}),
+        RoleName.ADVERSARIAL_REVIEWER: frozenset({RoleAction.REQUEST_CHALLENGE}),
+        RoleName.REPRODUCIBILITY_REVIEWER: frozenset({RoleAction.REVIEW_REPRODUCIBILITY}),
+        RoleName.TRIBUNAL_CHAIR: frozenset({RoleAction.EXPLAIN_VERDICT}),
+    }
+)
 
 
 class RoleAuthority:

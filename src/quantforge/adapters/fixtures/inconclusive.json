@@ -12,7 +12,6 @@
   "regime_stability": "stable",
   "concentration_risk": "low",
   "reproducibility_status": "failed",
-  "unresolved_critical_findings": false,
   "contradictory_evidence": false,
   "unresolved_noncritical_limitations": false,
   "evidence": [

@@ -5,12 +5,6 @@ from datetime import UTC, datetime
 import pytest
 
 from quantforge.domain.models import ClaimScope, ResearchClaim
-from quantforge.workflow.demo import DemoResult, run_demo
-
-
-@pytest.fixture(scope="session")
-def provisional_result() -> DemoResult:
-    return run_demo("provisional")
 
 
 @pytest.fixture

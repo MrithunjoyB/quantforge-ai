@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from decimal import Decimal
 from importlib import resources
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from quantforge.domain.models import (
     AdversarialChallenge,
@@ -25,6 +26,7 @@ from quantforge.domain.models import (
     ExperimentProposal,
     FailureCriterion,
     FindingSeverity,
+    GateStatus,
     JsonValue,
     MethodologyReview,
     MetricDefinition,
@@ -40,23 +42,25 @@ from quantforge.domain.models import (
     ReviewDecision,
     ReviewerFinding,
     RoleName,
+    Sensitivity,
+    Stability,
     StatisticalReview,
     StrictModel,
     TribunalCase,
+    Unit,
     ValidationStatus,
     VerdictEligibility,
 )
 from quantforge.roles.chair import create_chair_explanation
 from quantforge.roles.contracts import RoleAction, RoleAuthority
-from quantforge.serialization.canonical import canonical_sha256
-from quantforge.verdict.policy import GateStatus, Sensitivity, Stability
+from quantforge.serialization.canonical import canonical_decimal, canonical_sha256
 
 
 class FixtureFact(StrictModel):
     fact_id: str = Field(pattern=r"^[a-z][a-z0-9_-]{2,127}$")
     name: str
     value: Decimal
-    unit: str
+    unit: Unit
 
 
 class FixtureEvidence(StrictModel):
@@ -82,10 +86,18 @@ class ScenarioFixture(StrictModel):
     regime_stability: Stability
     concentration_risk: Sensitivity
     reproducibility_status: ReproducibilityStatus
-    unresolved_critical_findings: bool
     contradictory_evidence: bool
     unresolved_noncritical_limitations: bool
     evidence: tuple[FixtureEvidence, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def policy_flags_match_evidence(self) -> ScenarioFixture:
+        has_contradiction = any(
+            item.relationship is EvidenceRelationship.CONTRADICTS for item in self.evidence
+        )
+        if self.contradictory_evidence != has_contradiction:
+            raise ValueError("fixture contradiction flag does not match structured evidence")
+        return self
 
 
 def load_scenario(name: str) -> ScenarioFixture:
@@ -107,26 +119,33 @@ class MockEvidenceAdapter:
         self,
         *,
         claim: ResearchClaim,
+        case_id: str,
         experiment_id: str,
         constitution_hash: str,
         created_at: datetime,
     ) -> tuple[EvidenceObject, ...]:
         result: list[EvidenceObject] = []
+        source = resources.files("quantforge.adapters").joinpath(
+            f"fixtures/{self._fixture.name}.json"
+        )
+        source_digest = hashlib.sha256(source.read_bytes()).hexdigest()
         for item in self._fixture.evidence:
             content: dict[str, JsonValue] = {
                 "classification": "synthetic_validation_only",
-                "facts": {fact.fact_id: str(fact.value) for fact in item.facts},
+                "facts": {fact.fact_id: canonical_decimal(fact.value) for fact in item.facts},
                 "scenario": self._fixture.name,
             }
             result.append(
                 EvidenceObject(
                     evidence_id=item.evidence_id,
                     evidence_type=item.evidence_type,
+                    case_id=case_id,
                     claim_ids=(claim.claim_id,),
                     experiment_id=experiment_id,
                     constitution_hash=constitution_hash,
                     source_adapter=self.adapter_id,
                     source_artifact=f"fixtures/{self._fixture.name}.json",
+                    source_artifact_sha256=source_digest,
                     structured_location="/evidence",
                     content_sha256=canonical_sha256(content),
                     created_at=created_at,
@@ -284,6 +303,11 @@ class MockRoleProvider:
                     evidence_references=(reference,),
                 ),
             ),
+            robustness_status=self._fixture.robustness_status,
+            cost_sensitivity=self._fixture.cost_sensitivity,
+            parameter_stability=self._fixture.parameter_stability,
+            regime_stability=self._fixture.regime_stability,
+            concentration_risk=self._fixture.concentration_risk,
             findings=(),
             reviewed_at=self._timestamp,
         )
@@ -307,11 +331,6 @@ class MockRoleProvider:
 
     def explain(self, case: TribunalCase, eligibility: VerdictEligibility) -> ChairExplanation:
         RoleAuthority.require(RoleName.TRIBUNAL_CHAIR, RoleAction.EXPLAIN_VERDICT)
-        contradictory = tuple(
-            EvidenceReference(evidence_id=item.evidence_id)
-            for item in self._fixture.evidence
-            if item.relationship is EvidenceRelationship.CONTRADICTS
-        )
         return create_chair_explanation(
             explanation_id=f"chair_{self._fixture.name}",
             eligibility=eligibility,
@@ -319,7 +338,6 @@ class MockRoleProvider:
             summary=(
                 "The deterministic policy result follows the governed evidence and review gates"
             ),
-            contradictory_evidence=contradictory,
             limitations=(
                 "Synthetic evidence cannot support financial advice or real profitability claims",
             ),

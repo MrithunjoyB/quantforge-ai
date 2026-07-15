@@ -1,7 +1,10 @@
 -r requirements.in
+build==1.5.1
+editables==0.5
+hatchling==1.27.0
 mypy==1.19.1
 pip-audit==2.9.0
 pip-tools==7.5.2
-pytest==9.0.2
+pytest==9.0.3
 pytest-cov==7.0.0
 ruff==0.14.14

@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import MappingProxyType
 
 from quantforge.domain.models import (
     ChairExplanation,
-    EvidenceReference,
     Verdict,
     VerdictEligibility,
 )
 
-_STRENGTH = {
-    Verdict.REJECTED: 0,
-    Verdict.INCONCLUSIVE: 1,
-    Verdict.FRAGILE: 2,
-    Verdict.PROVISIONALLY_SUPPORTED: 3,
-    Verdict.SUPPORTED: 4,
-}
+_STRENGTH = MappingProxyType(
+    {
+        Verdict.REJECTED: 0,
+        Verdict.INCONCLUSIVE: 1,
+        Verdict.FRAGILE: 2,
+        Verdict.PROVISIONALLY_SUPPORTED: 3,
+        Verdict.SUPPORTED: 4,
+    }
+)
 
 
 def create_chair_explanation(
@@ -26,7 +28,6 @@ def create_chair_explanation(
     eligibility: VerdictEligibility,
     requested_verdict: Verdict,
     summary: str,
-    contradictory_evidence: tuple[EvidenceReference, ...],
     limitations: tuple[str, ...],
     verdict_change_conditions: tuple[str, ...],
     created_at: datetime,
@@ -40,7 +41,7 @@ def create_chair_explanation(
         computed_verdict=eligibility.verdict,
         summary=summary,
         decisive_evidence=eligibility.decisive_evidence,
-        contradictory_evidence=contradictory_evidence,
+        contradictory_evidence=eligibility.contradictory_evidence,
         limitations=limitations,
         verdict_change_conditions=verdict_change_conditions,
         created_at=created_at,

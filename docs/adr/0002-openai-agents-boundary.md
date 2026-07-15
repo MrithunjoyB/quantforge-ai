@@ -7,9 +7,9 @@ Verified: 2026-07-15 against public OpenAI Agents SDK documentation.
 ## Verified assumptions
 
 The official Python package is documented as `openai-agents`. The current public interface describes
-`Agent`, `Runner.run`, and typed `output_type`; passing an output type requests structured output and
-the SDK validates JSON against that type. Official orchestration guidance states that code-driven
-orchestration is more deterministic and predictable than LLM-selected routing.
+`Agent`, `Runner.run`, and typed `output_type`; passing an output type requests Structured Outputs.
+Official orchestration guidance states that code-driven orchestration is more deterministic and
+predictable than LLM-selected routing.
 
 Sources:
 
@@ -24,6 +24,7 @@ only `MockRoleProvider`. A future adapter may use structured SDK output, but mus
 and validate the returned domain schema before state admission. It may expose no shell, broker,
 unrestricted filesystem, or verdict-selection tool.
 
-The global developer-docs connector could not be installed under the workspace security boundary,
-so these assumptions are dated and linked rather than encoded as an SDK dependency. The future
-implementation must re-verify current package/API details and pin its dependency before use.
+These assumptions were re-verified from the linked official OpenAI Agents SDK documentation during
+the independent Phase 1 audit. The SDK remains absent from runtime and development dependencies. A
+future adapter must re-verify current API details, pin the complete dependency graph, and treat SDK
+structured output as untrusted until the QuantForge domain model independently validates it.
