@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+  "report": "QuantForge AI v0.1.0 Pre-Tag Release Validation",
+  "pre_tag_generated_at_utc": "2026-07-15T12:32:16Z",
+  "recorded_on_main_after_publication_at_utc": "2026-07-15T12:42:30Z",
+  "pre_tag_decision": "PASS",
+  "source_identity": {
+    "release_candidate_sha": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+    "release_candidate_message": "Make permission assertions portable",
+    "final_main_sha_before_reports": "036ef4f4e08d0b562fe43a9fd24a52e083f9d91f",
+    "final_main_message_before_reports": "Record final replacement v0.1.0 candidate",
+    "candidate_is_ancestor_of_final_main": true,
+    "version": "0.1.0"
+  },
+  "authenticated_identity": {
+    "gh_auth_status": "passed",
+    "active_account": "MrithunjoyB",
+    "api_login": "MrithunjoyB",
+    "api_user_id": 184139366
+  },
+  "tag_confirmation_recorded_after_pre_tag_pass": {
+    "name": "v0.1.0",
+    "object_type": "tag",
+    "tag_object_sha": "c461cbb20cf600d737e3d46ecbadc2696ef1b647",
+    "peeled_target_sha": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+    "local_remote_and_public_api_identity_match": true,
+    "created_only_after_external_pre_tag_report_passed": true
+  },
+  "workflow_runs": {
+    "ci": {"run_id": 29411563137, "head_sha": "036ef4f4e08d0b562fe43a9fd24a52e083f9d91f", "conclusion": "success"},
+    "codeql": {"run_id": 29411563070, "head_sha": "036ef4f4e08d0b562fe43a9fd24a52e083f9d91f", "conclusion": "success"},
+    "security": {"run_id": 29411563113, "head_sha": "036ef4f4e08d0b562fe43a9fd24a52e083f9d91f", "conclusion": "success"},
+    "reproducibility": {"run_id": 29411563322, "head_sha": "036ef4f4e08d0b562fe43a9fd24a52e083f9d91f", "conclusion": "success"},
+    "dependency_graph": {"run_id": 29412408921, "head_sha": "036ef4f4e08d0b562fe43a9fd24a52e083f9d91f", "conclusion": "success"},
+    "exact_candidate": {
+      "run_id": 29411586216,
+      "job_id": 87339691606,
+      "requested_ref": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+      "expected_sha": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+      "checked_out_sha": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+      "conclusion": "success"
+    }
+  },
+  "candidate_artifact": {
+    "artifact_id": 8341381457,
+    "name": "quantforge-ai-v0.1.0-candidate-50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+    "archive_size_bytes": 176106,
+    "archive_sha256": "6886121d09ac713b0b21a7416a1200315472703649571dc37e5b9f6fd3465beb",
+    "archive_digest_independently_verified": true,
+    "approved_file_count": 7
+  },
+  "asset_inventory": [
+    {"name": "SHA256SUMS", "size_bytes": 611, "sha256": "bb20962664269193711c7c3679a3ac69b0f2daf80fc9599dc37d402d3fd5400b"},
+    {"name": "determinism-validation.json", "size_bytes": 3557, "sha256": "0eb088d082dfd2ffd187c64444c93336f07e0532855ae81d7ae3afb89d373020"},
+    {"name": "quantforge-ai-v0.1.0-release-validation.json", "size_bytes": 13758, "sha256": "9e34d7a55403d2cfdf0618a0f067c798c8d4ab00e806bc430fc8230b330059ce"},
+    {"name": "quantforge-ai-v0.1.0-release-validation.md", "size_bytes": 2086, "sha256": "1377a8f57568da249028dd0f72a5cc112b14ce8b6de35a805fbcfed6f012ea81"},
+    {"name": "quantforge-ai-v0.1.0-sbom.cdx.json", "size_bytes": 18559, "sha256": "3df44fe13627dab65aee9c5d30fa8694196f94e136fd16f12dd0d6b93fc75230"},
+    {"name": "quantforge_ai-0.1.0-py3-none-any.whl", "size_bytes": 50611, "sha256": "bdc9baa2b3cb2e14c35df494b8c472d1058cd2e6fd6b7024190fbdd5378e2be6"},
+    {"name": "quantforge_ai-0.1.0.tar.gz", "size_bytes": 114784, "sha256": "afdc677576a1505c57e0b811d28186c49a4b8138b8767d618de7b0dcbb6e5e1c"}
+  ],
+  "checksum_and_sbom": {
+    "sha256sums_verification": "passed for all six listed payload files",
+    "sbom_format": "CycloneDX 1.6 JSON",
+    "sbom_strict_schema_validation": "passed",
+    "sbom_serial_number": "urn:uuid:5b06b87c-c3e8-57b9-b6c1-8a97bb78a5c3",
+    "sbom_root_component": "pkg:pypi/quantforge-ai@0.1.0",
+    "sbom_source_commit": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+    "sbom_wheel_sha256": "bdc9baa2b3cb2e14c35df494b8c472d1058cd2e6fd6b7024190fbdd5378e2be6"
+  },
+  "package_smoke_and_determinism": {
+    "wheel_members": 38,
+    "wheel_record_integrity": "passed",
+    "sdist_members": 95,
+    "sdist_archive_safety": "passed",
+    "license_notice_and_metadata": "passed",
+    "fresh_install_outside_source": "passed",
+    "pip_check": "No broken requirements found.",
+    "runtime_version": "0.1.0",
+    "cli_version": "quantforge 0.1.0",
+    "offline_scenarios": ["provisional", "fragile", "inconclusive"],
+    "case_validation": "passed",
+    "semantic_audit_replay": "passed",
+    "deterministic_file_comparisons": 15,
+    "byte_identical": true
+  },
+  "public_surface_confirmation_recorded_after_publication": {
+    "release_id": 354427342,
+    "release_url": "https://github.com/MrithunjoyB/quantforge-ai/releases/tag/v0.1.0",
+    "published": true,
+    "draft": false,
+    "prerelease": false,
+    "immutable": true,
+    "release_asset_count": 7,
+    "unauthenticated_asset_downloads": "passed",
+    "public_source_archive_matches_candidate": true,
+    "readme_release_notes_citation_security_pages": "HTTP 200"
+  },
+  "branch_protection_and_security": {
+    "repository_public": true,
+    "main_protection": "active and enforced for administrators",
+    "strict_required_check_count": 8,
+    "pull_request_required": true,
+    "linear_history_required": true,
+    "conversation_resolution_required": true,
+    "force_pushes_allowed": false,
+    "deletions_allowed": false,
+    "immutable_releases_enabled": true,
+    "default_workflow_permissions": "read",
+    "secret_scanning": "enabled",
+    "secret_scanning_push_protection": "enabled",
+    "vulnerability_alerts": "enabled",
+    "dependabot_security_updates": "enabled",
+    "automated_security_fixes": "enabled",
+    "private_vulnerability_reporting": "enabled",
+    "open_unmerged_dependabot_prs": [1, 2]
+  },
+  "protected_engine": {
+    "branch": "main",
+    "head": "9266f317573e90452ca88c7d30196d8b6d6f21a3",
+    "tracked_diff": "empty",
+    "staged_diff": "empty",
+    "untracked_inventory": "empty",
+    "ignored_inventory_count": 16301,
+    "ignored_inventory_sha256": "9f99224e3a34dfd512442f0e0931ca201a896f66265aefa91d2992a09f4e092b",
+    "v1_0_0_tag_object": "20ac53c5e4b61ae7b431d5bb263f246e35f8d2a2",
+    "v1_0_0_peeled_target": "2f86b71dbc9f29dbda861942d8afbb10c04b6625",
+    "unchanged": true
+  },
+  "remaining_limitations": [
+    "No real OpenAI execution or live model provider",
+    "No C++ engine integration or market-data ingestion",
+    "No broker connectivity, order submission, or live trading",
+    "No production-readiness, investment-advice, or profitability claim",
+    "Audit nonrepudiation is local rather than externally signed or anchored"
+  ],
+  "final_decision": "PASS — all mandatory pre-tag gates passed before the single annotated v0.1.0 tag was created"
+}
