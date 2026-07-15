@@ -51,6 +51,7 @@ jobs:
           --baseline-commit 9888f6f64dfb814a9cc07bcdc8d2b4c366ebbe7e
           --output-dir release/v0.1.0
           --allow-recorded-engine-boundary
+          --expected-origin https://github.com/${{ github.repository }}
       - name: Upload non-sensitive candidate artifacts without publishing
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

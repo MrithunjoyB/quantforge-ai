@@ -84,17 +84,42 @@ def git_text(root: Path, *args: str) -> str:
     return _text(["git", *args], root)
 
 
-def verify_quantforge_boundary(root: Path, baseline: str) -> dict[str, Any]:
+def _canonical_github_origin(url: str) -> str:
+    canonical = url.removesuffix(".git")
+    if re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", canonical) is None:
+        raise ReleaseValidationError("expected origin must be a canonical GitHub HTTPS URL")
+    return canonical
+
+
+def verify_remote_boundary(root: Path, expected_origin: str | None) -> list[dict[str, str]]:
+    """Require either no remotes or one exact canonical GitHub origin."""
+
+    remotes = git_text(root, "remote").splitlines()
+    if expected_origin is None:
+        if remotes:
+            raise ReleaseValidationError(
+                "QuantForge must not have a configured remote for offline local candidacy"
+            )
+        return []
+    if remotes != ["origin"]:
+        raise ReleaseValidationError("remote candidacy requires exactly one remote named origin")
+    expected = _canonical_github_origin(expected_origin)
+    fetch_url = _canonical_github_origin(git_text(root, "remote", "get-url", "origin"))
+    push_url = _canonical_github_origin(git_text(root, "remote", "get-url", "--push", "origin"))
+    if fetch_url != expected or push_url != expected:
+        raise ReleaseValidationError("origin fetch/push URL does not match the expected repository")
+    return [{"fetch_url": fetch_url, "name": "origin", "push_url": push_url}]
+
+
+def verify_quantforge_boundary(
+    root: Path, baseline: str, expected_origin: str | None = None
+) -> dict[str, Any]:
     head = git_text(root, "rev-parse", "--verify", "HEAD")
     if SHA_RE.fullmatch(head) is None or SHA_RE.fullmatch(baseline) is None:
         raise ReleaseValidationError("baseline and HEAD must be full lowercase Git commit SHAs")
     if git_text(root, "status", "--porcelain=v1", "--untracked-files=all"):
         raise ReleaseValidationError("QuantForge working tree or index is not clean")
-    remotes = git_text(root, "remote")
-    if remotes:
-        raise ReleaseValidationError(
-            "QuantForge must not have a configured remote for local candidacy"
-        )
+    remotes = verify_remote_boundary(root, expected_origin)
     _run(["git", "merge-base", "--is-ancestor", baseline, head], root)
     _run(["git", "merge-base", "--is-ancestor", ORIGINAL_PHASE1_COMMIT, head], root)
     baseline_message = git_text(root, "show", "-s", "--format=%s", baseline)
@@ -104,7 +129,7 @@ def verify_quantforge_boundary(root: Path, baseline: str) -> dict[str, Any]:
         "baseline_commit": baseline,
         "branch": git_text(root, "branch", "--show-current"),
         "original_phase1_commit": ORIGINAL_PHASE1_COMMIT,
-        "remotes": [],
+        "remotes": remotes,
         "source_commit": head,
         "working_tree": "clean",
     }
@@ -310,7 +335,12 @@ def write_checksums(output: Path, assets: list[Path]) -> dict[str, str]:
 
 
 def validate_release(
-    root: Path, baseline: str, output: Path, *, allow_recorded_engine: bool = False
+    root: Path,
+    baseline: str,
+    output: Path,
+    *,
+    allow_recorded_engine: bool = False,
+    expected_origin: str | None = None,
 ) -> dict[str, Any]:
     if output.exists():
         raise ReleaseValidationError(f"release output already exists: {output}")
@@ -322,7 +352,7 @@ def validate_release(
             "release output must be under the ignored release/ directory"
         ) from error
 
-    quantforge_boundary = verify_quantforge_boundary(root, baseline)
+    quantforge_boundary = verify_quantforge_boundary(root, baseline, expected_origin)
     engine_before = verify_engine_boundary(root, allow_recorded=allow_recorded_engine)
     version = project_version(root)
     source_commit = str(quantforge_boundary["source_commit"])
@@ -480,8 +510,8 @@ def validate_release(
         raise ReleaseValidationError("protected engine changed during release validation")
     if git_text(root, "status", "--porcelain=v1", "--untracked-files=all"):
         raise ReleaseValidationError("release validation changed tracked or untracked source state")
-    if git_text(root, "remote"):
-        raise ReleaseValidationError("a Git remote appeared during release validation")
+    if verify_remote_boundary(root, expected_origin) != quantforge_boundary["remotes"]:
+        raise ReleaseValidationError("Git remote state changed during release validation")
 
     coverage_document = json.loads(coverage_json.read_text(encoding="utf-8"))
     totals = coverage_document["totals"]
@@ -616,6 +646,13 @@ def main() -> int:
         action="store_true",
         help="Use signed-off Phase 1 engine evidence only when the sibling is absent in remote CI",
     )
+    parser.add_argument(
+        "--expected-origin",
+        help=(
+            "Allow exactly one canonical GitHub HTTPS origin and require its fetch/push URL "
+            "to match this value; omit for offline no-remote candidacy"
+        ),
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     try:
@@ -624,6 +661,7 @@ def main() -> int:
             args.baseline_commit,
             args.output_dir.resolve(),
             allow_recorded_engine=args.allow_recorded_engine_boundary,
+            expected_origin=args.expected_origin,
         )
     except (OSError, ReleaseValidationError, RuntimeError, ValueError) as error:
         print(f"release candidate validation failed: {error}", file=sys.stderr)

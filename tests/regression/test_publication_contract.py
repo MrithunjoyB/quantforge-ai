@@ -13,6 +13,7 @@ from quantforge.cli.main import main
 from scripts.check_repository import project_version, validate_repository
 from scripts.generate_sbom import generate_sbom, write_sbom
 from scripts.inspect_packages import runtime_requirements
+from scripts.release_candidate import ReleaseValidationError, verify_remote_boundary
 from scripts.wheel_smoke import runtime_environment_builder, validate_demo_result
 
 
@@ -74,6 +75,35 @@ def test_github_workflow_and_dependabot_yaml_is_well_formed() -> None:
     for path in files:
         document = yaml.load(path.read_text(encoding="utf-8"))
         assert isinstance(document, dict), path
+
+
+def test_release_candidate_remote_boundary_is_exact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commands = {
+        ("remote",): "origin",
+        ("remote", "get-url", "origin"): "https://github.com/MrithunjoyB/quantforge-ai",
+        (
+            "remote",
+            "get-url",
+            "--push",
+            "origin",
+        ): "https://github.com/MrithunjoyB/quantforge-ai",
+    }
+    monkeypatch.setattr("scripts.release_candidate.git_text", lambda _root, *args: commands[args])
+
+    assert verify_remote_boundary(tmp_path, "https://github.com/MrithunjoyB/quantforge-ai.git") == [
+        {
+            "fetch_url": "https://github.com/MrithunjoyB/quantforge-ai",
+            "name": "origin",
+            "push_url": "https://github.com/MrithunjoyB/quantforge-ai",
+        }
+    ]
+    with pytest.raises(ReleaseValidationError, match="does not match"):
+        verify_remote_boundary(tmp_path, "https://github.com/MrithunjoyB/other")
+    commands[("remote",)] = "origin\nunexpected"
+    with pytest.raises(ReleaseValidationError, match="exactly one"):
+        verify_remote_boundary(tmp_path, "https://github.com/MrithunjoyB/quantforge-ai")
 
 
 def test_package_inspection_separates_runtime_and_optional_requirements() -> None:
