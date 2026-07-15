@@ -10,6 +10,7 @@ from quantforge.serialization.canonical import canonical_json
 from quantforge.workflow.demo import run_demo
 
 
+@pytest.mark.malicious
 @pytest.mark.parametrize(
     "unsafe_path",
     [
@@ -29,6 +30,7 @@ def test_unsafe_artifact_references_are_rejected(unsafe_path: str) -> None:
         EvidenceObject.model_validate(data)
 
 
+@pytest.mark.malicious
 def test_unknown_fields_and_schema_versions_are_rejected() -> None:
     case = run_demo("provisional").case
     data: dict[str, Any] = case.model_dump(mode="python")

@@ -27,6 +27,7 @@ def test_canonical_unicode_normalization_is_stable_and_collision_safe() -> None:
         canonical_json({"e\u0301": True, "é": False})
 
 
+@pytest.mark.malicious
 @pytest.mark.parametrize(
     "value, error",
     [
@@ -66,6 +67,7 @@ def test_safe_parser_applies_size_limit_to_in_memory_input() -> None:
         safe_parse_json('"oversized"', max_bytes=2)
 
 
+@pytest.mark.malicious
 def test_safe_json_round_trip_and_file_controls(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "value.json"
     safe_write_json(target, {"ok": True})

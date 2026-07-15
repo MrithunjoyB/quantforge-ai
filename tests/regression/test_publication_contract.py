@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import json
+import tomllib
+from pathlib import Path
+
+import pytest
+from ruamel.yaml import YAML
+
+from quantforge import __version__
+from quantforge.cli.main import main
+from scripts.check_repository import project_version, validate_repository
+from scripts.generate_sbom import generate_sbom, write_sbom
+from scripts.inspect_packages import runtime_requirements
+
+
+def test_pytest_explicitly_targets_the_source_tree() -> None:
+    root = Path(__file__).resolve().parents[2]
+    configuration = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    assert configuration["tool"]["pytest"]["ini_options"]["pythonpath"] == ["src"]
+
+
+def test_version_identity_is_single_source_and_cli_visible(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = Path(__file__).resolve().parents[2]
+    assert project_version(root) == __version__ == "0.1.0"
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--version"])
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.strip() == "quantforge 0.1.0"
+
+
+def test_publication_repository_contract_is_complete() -> None:
+    root = Path(__file__).resolve().parents[2]
+    result = validate_repository(root)
+    assert result["status"] == "passed"
+    assert result["version"] == "0.1.0"
+    assert result["local_links_checked"] > 10
+    assert len(result["action_references"]) >= 10
+    assert result["phase1_audit"]["status"] == "passed"
+    assert result["phase1_audit"]["repaired_critical_high_medium"] == [
+        "H-01",
+        "H-02",
+        "H-03",
+        "H-04",
+        "H-05",
+        "M-01",
+        "M-02",
+        "M-03",
+        "M-04",
+    ]
+
+
+def test_github_workflow_and_dependabot_yaml_is_well_formed() -> None:
+    root = Path(__file__).resolve().parents[2]
+    yaml = YAML(typ="safe")
+    files = sorted((root / ".github/workflows").glob("*.yml"))
+    files.append(root / ".github/dependabot.yml")
+    for path in files:
+        document = yaml.load(path.read_text(encoding="utf-8"))
+        assert isinstance(document, dict), path
+
+
+def test_package_inspection_separates_runtime_and_optional_requirements() -> None:
+    requirements = [
+        "pydantic==2.12.5",
+        "pytest==9.0.3; extra == 'dev'",
+        "ruff==0.14.14; extra == 'dev'",
+    ]
+    assert runtime_requirements(requirements) == ["pydantic==2.12.5"]
+
+
+def test_cyclonedx_sbom_generation_is_deterministic_and_versioned(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    wheel = tmp_path / "quantforge_ai-0.1.0-py3-none-any.whl"
+    wheel.write_bytes(b"deterministic wheel fixture")
+    first = generate_sbom(
+        root,
+        wheel,
+        root / "requirements.lock",
+        "a" * 40,
+        1_752_556_800,
+    )
+    second = generate_sbom(
+        root,
+        wheel,
+        root / "requirements.lock",
+        "a" * 40,
+        1_752_556_800,
+    )
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+    assert write_sbom(first, first_path) == write_sbom(second, second_path)
+    assert first_path.read_bytes() == second_path.read_bytes()
+    document = json.loads(first_path.read_text(encoding="utf-8"))
+    assert document["bomFormat"] == "CycloneDX"
+    assert document["specVersion"] == "1.6"
+    assert document["metadata"]["component"]["version"] == "0.1.0"

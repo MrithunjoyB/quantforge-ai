@@ -4,17 +4,31 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quantforge-ai"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Governed, deterministic research tribunal for quantitative claims"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Mrithunjoy Basumatary" }]
+keywords = ["audit", "governance", "quantitative-research", "reproducibility"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = ["pydantic==2.12.5"]
 
 [project.optional-dependencies]
 dev = [
-  "build==1.5.1",
+  "build==1.5.0",
+  "cffconvert==2.0.0",
+  "cyclonedx-python-lib==9.1.0",
   "editables==0.5",
   "hatchling==1.27.0",
   "mypy==1.19.1",
@@ -31,12 +45,19 @@ quantforge = "quantforge.cli.main:main"
 [tool.hatch.build]
 exclude = ["/audit"]
 
+[tool.hatch.version]
+path = "src/quantforge/_version.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/quantforge"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers -ra"
+pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+  "malicious: adversarial serialized-input and hostile-path regression tests",
+]
 
 [tool.coverage.run]
 branch = true

@@ -163,6 +163,7 @@ def test_numerical_narrative_edge_forms_are_rejected(numeric_text: str) -> None:
         type(item).model_validate({**item.model_dump(mode="python"), "summary": numeric_text})
 
 
+@pytest.mark.malicious
 def test_source_artifact_existence_hash_and_symlink_controls(tmp_path: Path) -> None:
     item = run_demo("provisional").evidence_ledger.snapshot().evidence[0]
     artifact = tmp_path / "artifact.json"

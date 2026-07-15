@@ -26,6 +26,7 @@ def test_audit_chain_verifies_reconstructs_and_roundtrips(tmp_path: Path) -> Non
     assert restored.replay_case() == result.case
 
 
+@pytest.mark.malicious
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -89,6 +90,7 @@ def test_audit_rejects_cross_case_append() -> None:
         )
 
 
+@pytest.mark.malicious
 def test_rehashed_policy_input_tampering_is_rejected_semantically() -> None:
     events = list(run_demo("provisional").audit_log.events)
     verdict_index = 10

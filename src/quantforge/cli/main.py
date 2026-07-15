@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from quantforge import __version__
 from quantforge.audit import AuditLog
 from quantforge.domain.models import TribunalCase
 from quantforge.serialization.canonical import canonical_json
@@ -26,6 +27,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="quantforge", description="Offline governed tribunal core"
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     case = commands.add_parser("case")
     case_commands = case.add_subparsers(dest="case_command", required=True)

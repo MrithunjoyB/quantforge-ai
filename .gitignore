@@ -9,9 +9,12 @@ coverage.xml
 htmlcov/
 build/
 dist/
+/release/
+/.release-work/
 *.egg-info/
 .env
 .env.*
 !.env.example
 quantforge-demo-*/
 .DS_Store
+*.log

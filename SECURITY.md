@@ -1,13 +1,34 @@
-# Security policy
+# Security Policy
 
-Do not report sensitive vulnerabilities in public issues. Report them privately to the repository
-maintainer with reproduction steps, affected versions, and impact. Do not include real credentials
-or private data.
+## Supported versions
 
-Phase 1 has no network provider, broker, market-data adapter, arbitrary command tool, or unrestricted
-filesystem role capability. Treat serialized cases, evidence, audit logs, artifact paths, and future
-model output as hostile. See [Security Model](docs/SECURITY_MODEL.md) and
-[Threat Model](docs/THREAT_MODEL.md).
+Before public release, only the exact committed `v0.1.0` candidate is assessed. After publication,
+the latest `0.1.x` release receives best-effort security fixes. Uncommitted modifications, forks, and
+future integrations that bypass documented adapters are not covered.
 
-No security support claim is made for uncommitted local modifications or future integrations that
-bypass the documented adapters.
+## Private reporting
+
+Do not disclose a suspected vulnerability in a public issue. Before the GitHub repository exists,
+contact the maintainer through the private channel used to provide this candidate. After publication,
+use GitHub private vulnerability reporting for the repository. Include:
+
+- affected version and exact commit;
+- minimal synthetic reproduction and prerequisites;
+- expected versus observed security boundary;
+- impact, exploitability, and whether disclosure has occurred;
+- suggested remediation, if known.
+
+Never include a real credential, private market data, personal data, or proprietary artifact. The
+maintainer will acknowledge the report, reproduce it, assess severity, coordinate a repair and
+regression test, and agree on disclosure timing. No bounty or response-time guarantee is offered.
+
+## Phase 1 threat boundary
+
+Phase 1 has no network provider, API key, broker, market-data adapter, arbitrary command tool,
+unrestricted role filesystem access, database, or live execution. Serialized cases, evidence, audit
+logs, artifact paths, archives, and future model output are hostile input. See the
+[Security Model](docs/SECURITY_MODEL.md) and [Threat Model](docs/THREAT_MODEL.md).
+
+The local audit chain detects partial or accidental tampering but is not signed or externally
+anchored. A party controlling the complete artifact set can replace and rehash it; this is an explicit
+Phase 2 limitation, not a security guarantee.
