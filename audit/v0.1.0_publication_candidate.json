@@ -1,16 +1,19 @@
 {
   "schema_version": "1.0",
   "report": "QuantForge AI v0.1.0 Publication-Candidate Audit",
-  "generated_at_utc": "2026-07-15T11:09:15Z",
+  "generated_at_utc": "2026-07-15T11:22:56Z",
   "version": "0.1.0",
   "source_identity": {
     "original_phase1_commit": "2e9da09f4470a1c50e756a06ab935d90f1beaa7a",
     "baseline_commit": "9888f6f64dfb814a9cc07bcdc8d2b4c366ebbe7e",
     "baseline_message": "Harden Phase 1 after independent audit",
-    "final_local_head": "95349b724c9291bbf47ad2595e004470b7d32949",
+    "final_local_head": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
     "final_local_head_semantics": "Exact clean source HEAD subjected to the complete local release-candidate transaction before this report-only audit commit.",
-    "superseded_source_candidate": "84deaf8640df331888f3b0da61c8b4279da55211",
-    "supersession_reason": "Remote Windows portability and exact-SHA workflow-origin defects required normal descendant source and workflow repairs.",
+    "superseded_source_candidates": [
+      "84deaf8640df331888f3b0da61c8b4279da55211",
+      "95349b724c9291bbf47ad2595e004470b7d32949"
+    ],
+    "supersession_reason": "Remote Windows portability, exact-SHA workflow-origin, and Windows permission-assertion defects required normal descendant repairs.",
     "branch": "main",
     "working_tree_at_validation": "clean",
     "remotes": [
@@ -181,7 +184,7 @@
         "scope": "compatibility tests and packaging"
       }
     ],
-    "remote_status": "Remote publication exposed and repaired Windows and exact-SHA origin-boundary defects. Candidate 95349b724c9291bbf47ad2595e004470b7d32949 is locally validated; final push-triggered and exact-SHA remote success remain required after this report-only commit."
+    "remote_status": "Remote publication exposed and repaired Windows implementation, exact-SHA origin-boundary, and Windows permission-assertion defects. Candidate 50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec is locally validated; final push-triggered and exact-SHA remote success remain required after this report-only commit."
   },
   "action_sha_inventory": [
     {
@@ -276,19 +279,27 @@
       "regression_tests_added": 1,
       "repair_commit": "95349b724c9291bbf47ad2595e004470b7d32949",
       "affected_validation_rerun": "complete exact local candidate transaction passed; final remote exact-SHA run pending at report generation"
+    },
+    {
+      "failure": "After atomic writes succeeded on Windows, one remaining test compared Windows' synthesized POSIX mode bits to an exact POSIX 0600 value.",
+      "root_cause": "Windows st_mode group/other bits describe DOS attributes and do not represent the inherited access-control list.",
+      "repair": "Preserve the exact 0600 assertion on POSIX; on Windows assert owner read/write mode representation while retaining all atomic, symlink, cleanup, and round-trip controls.",
+      "regression_tests_added": 0,
+      "repair_commit": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+      "affected_validation_rerun": "complete exact local candidate transaction passed; final remote matrix pending at report generation"
     }
   ],
   "packaging_results": {
     "wheel": {
       "filename": "quantforge_ai-0.1.0-py3-none-any.whl",
-      "sha256": "608d030cc42be1bd6f98c29ef09cf0f9d3ead5c6e0179936b8f2bac26df1ff5c",
+      "sha256": "bdc9baa2b3cb2e14c35df494b8c472d1058cd2e6fd6b7024190fbdd5378e2be6",
       "members": 38,
       "metadata": "passed",
       "record_integrity": "passed"
     },
     "sdist": {
       "filename": "quantforge_ai-0.1.0.tar.gz",
-      "sha256": "07bfada5ffd899f8a732aec0fe7212ea5e320fefd5348cf5926e889cf45a057b",
+      "sha256": "afdc677576a1505c57e0b811d28186c49a4b8138b8767d618de7b0dcbb6e5e1c",
       "members": 95,
       "archive_safety": "passed"
     },
@@ -308,11 +319,11 @@
   "sbom": {
     "filename": "quantforge-ai-v0.1.0-sbom.cdx.json",
     "format": "CycloneDX 1.6 JSON",
-    "sha256": "91e065aac3a93d1d1ec2ac8d1325388dec61789b7b74c6d3194f9012041e238c",
-    "serial_number": "urn:uuid:cce424ef-98fe-5525-a66d-10823da69d7a",
+    "sha256": "3df44fe13627dab65aee9c5d30fa8694196f94e136fd16f12dd0d6b93fc75230",
+    "serial_number": "urn:uuid:5b06b87c-c3e8-57b9-b6c1-8a97bb78a5c3",
     "root_component": "pkg:pypi/quantforge-ai@0.1.0",
-    "source_commit": "95349b724c9291bbf47ad2595e004470b7d32949",
-    "wheel_sha256": "608d030cc42be1bd6f98c29ef09cf0f9d3ead5c6e0179936b8f2bac26df1ff5c",
+    "source_commit": "50c73f8a1bc6c7abea64edcf8a2f50e5e3dd2dec",
+    "wheel_sha256": "bdc9baa2b3cb2e14c35df494b8c472d1058cd2e6fd6b7024190fbdd5378e2be6",
     "runtime_components": 5,
     "dependency_entries": 6,
     "generator": "cyclonedx-python-lib==9.1.0",
@@ -320,7 +331,7 @@
   },
   "checksums": {
     "filename": "SHA256SUMS",
-    "sha256": "e25412355144e81d6f1645fdb1ae53b693a5de7c0b464b4b559d558791b107a7",
+    "sha256": "6199cc075cc207fc4d57c615242daadd25516687424e64b5b6db1f704373015e",
     "assets_verified": 6,
     "independent_verification": "passed"
   },
