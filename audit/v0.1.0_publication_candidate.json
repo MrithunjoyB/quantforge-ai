@@ -1,22 +1,33 @@
 {
   "schema_version": "1.0",
   "report": "QuantForge AI v0.1.0 Publication-Candidate Audit",
-  "generated_at_utc": "2026-07-15T10:14:44Z",
+  "generated_at_utc": "2026-07-15T11:09:15Z",
   "version": "0.1.0",
   "source_identity": {
     "original_phase1_commit": "2e9da09f4470a1c50e756a06ab935d90f1beaa7a",
     "baseline_commit": "9888f6f64dfb814a9cc07bcdc8d2b4c366ebbe7e",
     "baseline_message": "Harden Phase 1 after independent audit",
-    "final_local_head": "84deaf8640df331888f3b0da61c8b4279da55211",
+    "final_local_head": "95349b724c9291bbf47ad2595e004470b7d32949",
     "final_local_head_semantics": "Exact clean source HEAD subjected to the complete local release-candidate transaction before this report-only audit commit.",
+    "superseded_source_candidate": "84deaf8640df331888f3b0da61c8b4279da55211",
+    "supersession_reason": "Remote Windows portability and exact-SHA workflow-origin defects required normal descendant source and workflow repairs.",
     "branch": "main",
     "working_tree_at_validation": "clean",
-    "remotes": [],
+    "remotes": [
+      {
+        "name": "origin",
+        "fetch_url": "https://github.com/MrithunjoyB/quantforge-ai",
+        "push_url": "https://github.com/MrithunjoyB/quantforge-ai"
+      }
+    ],
     "original_phase1_is_ancestor": true,
     "baseline_is_ancestor": true,
     "history_rewritten": false,
     "tag_created": false,
-    "push_performed": false,
+    "push_performed": true,
+    "source_candidate_pushed_at_report_generation": false,
+    "github_repository": "MrithunjoyB/quantforge-ai",
+    "github_visibility": "public",
     "release_published": false,
     "report_commit_note": "The normal commit containing this report necessarily follows the attested source HEAD; a Git commit cannot embed its own SHA. Resolve the report-storage commit with Git at handoff."
   },
@@ -62,7 +73,7 @@
   "repository_boundary": {
     "quantforge": {
       "branch": "main",
-      "remote_count": 0,
+      "remote_count": 1,
       "working_tree_at_validation": "clean"
     },
     "protected_engine": {
@@ -116,7 +127,9 @@
       "scripts/quality.sh",
       "src/quantforge/__init__.py",
       "src/quantforge/cli/main.py",
+      "src/quantforge/serialization/safe_json.py",
       "tests/regression/test_packaging_contract.py",
+      "tests/regression/test_regressions.py",
       "tests/unit/test_audit.py",
       "tests/unit/test_evidence.py",
       "tests/unit/test_security_models.py",
@@ -168,7 +181,7 @@
         "scope": "compatibility tests and packaging"
       }
     ],
-    "remote_status": "Definitions validated locally; no remote job has run. Exact-SHA remote success is required after publication authorization."
+    "remote_status": "Remote publication exposed and repaired Windows and exact-SHA origin-boundary defects. Candidate 95349b724c9291bbf47ad2595e004470b7d32949 is locally validated; final push-triggered and exact-SHA remote success remain required after this report-only commit."
   },
   "action_sha_inventory": [
     {
@@ -221,16 +234,16 @@
     "formatting": "passed",
     "ruff": "passed",
     "strict_mypy": "passed; 37 source files",
-    "full_pytest": "289 passed",
-    "reverse_file_order_pytest": "289 passed",
-    "malicious_input_pytest": "25 passed; 264 deselected",
+    "full_pytest": "291 passed",
+    "reverse_file_order_pytest": "291 passed",
+    "malicious_input_pytest": "25 passed; 266 deselected",
     "skipped": 0,
     "branch_coverage": {
       "enabled": true,
-      "overall_percent": 92.4,
+      "overall_percent": 92.42,
       "required_percent": 90,
-      "covered_branches": 424,
-      "total_branches": 502,
+      "covered_branches": 426,
+      "total_branches": 504,
       "missing_branches": 78
     },
     "governance_critical_coverage_percent": 92,
@@ -239,25 +252,43 @@
     "citation_cff": "passed with cffconvert==2.0.0",
     "repository_contracts": "passed"
   },
-  "failure_repair_record": {
-    "initial_failure": "The first complete candidate run reached the outside-source wheel test, where the bundled macOS Python copied an @rpath-based launcher into a venv without its sibling shared library.",
-    "root_cause": "venv.EnvBuilder defaults to copied POSIX launchers, unlike the working symlink behavior of the venv CLI for this interpreter distribution.",
-    "repair": "Use interpreter symlinks on POSIX and copied launchers on Windows; assert the real terminal workflow state CHAIR_EXPLANATION.",
-    "regression_tests_added": 2,
-    "repair_commit": "84deaf8640df331888f3b0da61c8b4279da55211",
-    "fresh_environment_rerun": "passed"
-  },
+  "failure_repair_records": [
+    {
+      "failure": "The initial local candidate run reached the outside-source wheel test, where the bundled macOS Python copied an @rpath-based launcher into a venv without its sibling shared library.",
+      "root_cause": "venv.EnvBuilder defaults to copied POSIX launchers, unlike the working symlink behavior of the venv CLI for this interpreter distribution.",
+      "repair": "Use interpreter symlinks on POSIX and copied launchers on Windows; assert the real terminal workflow state CHAIR_EXPLANATION.",
+      "regression_tests_added": 2,
+      "repair_commit": "84deaf8640df331888f3b0da61c8b4279da55211",
+      "affected_validation_rerun": "passed"
+    },
+    {
+      "failure": "The initial public Windows Server 2022/Python 3.12 job failed 10 tests because os.fchmod is unavailable on Windows.",
+      "root_cause": "The secure atomic writer used a POSIX-only descriptor API after cross-platform tempfile.mkstemp creation.",
+      "repair": "Retain explicit descriptor mode hardening when os.fchmod exists and rely on mkstemp's private exclusive creation plus inherited Windows ACL otherwise.",
+      "regression_tests_added": 1,
+      "repair_commit": "371206c09951856eab45545890605477d6c82416",
+      "affected_validation_rerun": "passed locally; final remote matrix pending at report generation"
+    },
+    {
+      "failure": "The first remote exact-SHA candidate run verified the requested commit, then rejected the normal checkout origin before building artifacts.",
+      "root_cause": "The local no-remote candidacy invariant had no explicit safe mode for a GitHub Actions checkout.",
+      "repair": "Keep no-remote candidacy as the default and allow only one canonical GitHub HTTPS origin whose fetch and push URLs match an explicit expected repository.",
+      "regression_tests_added": 1,
+      "repair_commit": "95349b724c9291bbf47ad2595e004470b7d32949",
+      "affected_validation_rerun": "complete exact local candidate transaction passed; final remote exact-SHA run pending at report generation"
+    }
+  ],
   "packaging_results": {
     "wheel": {
       "filename": "quantforge_ai-0.1.0-py3-none-any.whl",
-      "sha256": "80b6b24c59829b2b265c60375b4cde95d2ceef93ede5546ef74404bf046de71a",
+      "sha256": "608d030cc42be1bd6f98c29ef09cf0f9d3ead5c6e0179936b8f2bac26df1ff5c",
       "members": 38,
       "metadata": "passed",
       "record_integrity": "passed"
     },
     "sdist": {
       "filename": "quantforge_ai-0.1.0.tar.gz",
-      "sha256": "95ee1fe39e08855961281b672537959e44ab7bd1b5ad0be029d15c83d3665e18",
+      "sha256": "07bfada5ffd899f8a732aec0fe7212ea5e320fefd5348cf5926e889cf45a057b",
       "members": 95,
       "archive_safety": "passed"
     },
@@ -277,11 +308,11 @@
   "sbom": {
     "filename": "quantforge-ai-v0.1.0-sbom.cdx.json",
     "format": "CycloneDX 1.6 JSON",
-    "sha256": "a5e94fb5dce4b2c430f4c7bc792545bbca06bea8eed2d25cb35ea21f68ef1e09",
-    "serial_number": "urn:uuid:abc0b703-b514-5d87-8424-7042a4f0971e",
+    "sha256": "91e065aac3a93d1d1ec2ac8d1325388dec61789b7b74c6d3194f9012041e238c",
+    "serial_number": "urn:uuid:cce424ef-98fe-5525-a66d-10823da69d7a",
     "root_component": "pkg:pypi/quantforge-ai@0.1.0",
-    "source_commit": "84deaf8640df331888f3b0da61c8b4279da55211",
-    "wheel_sha256": "80b6b24c59829b2b265c60375b4cde95d2ceef93ede5546ef74404bf046de71a",
+    "source_commit": "95349b724c9291bbf47ad2595e004470b7d32949",
+    "wheel_sha256": "608d030cc42be1bd6f98c29ef09cf0f9d3ead5c6e0179936b8f2bac26df1ff5c",
     "runtime_components": 5,
     "dependency_entries": 6,
     "generator": "cyclonedx-python-lib==9.1.0",
@@ -289,7 +320,7 @@
   },
   "checksums": {
     "filename": "SHA256SUMS",
-    "sha256": "1e879670eaeb50d9a0cd5c1f7513fcb1ce6b38181ebec4cceafe000c8a7f385f",
+    "sha256": "e25412355144e81d6f1645fdb1ae53b693a5de7c0b464b4b559d558791b107a7",
     "assets_verified": 6,
     "independent_verification": "passed"
   },
@@ -352,19 +383,20 @@
     "claims_and_limitations": "accurate for audited offline Phase 1 scope"
   },
   "remaining_limitations": [
-    "Only macOS arm64 with CPython 3.12.13 was executed locally; the declared CI matrix remains unclaimed until exact-SHA remote jobs pass.",
+    "The replacement source candidate was executed locally on macOS arm64 with CPython 3.12.13; final remote matrix and exact-SHA claims remain pending at report generation.",
     "The local audit chain is tamper-evident but is not signed or externally anchored; whole-artifact-set replacement remains a Phase 2 boundary.",
     "No live model provider or real OpenAI execution is present.",
     "No real C++ engine integration, market-data ingestion, database, retrieval system, or web UI is present.",
     "No broker connectivity, order submission, live trading, production deployment, profitability claim, or investment advice is present.",
-    "No GitHub repository, remote, push, tag, release, or asset upload was created by this task."
+    "The public GitHub source repository and canonical origin exist; no Git tag, GitHub Release, release asset, GitHub Package, or PyPI publication exists."
   ],
   "publication_readiness": {
     "github_publication_ready": true,
+    "github_source_repository_published": true,
     "local_validation": "passed",
     "release_publication_authorized": false,
     "remote_exact_sha_ci_required": true,
-    "next_authorization_required": "Explicit user authorization to create the GitHub repository, configure its first remote, and push the exact final report commit. Exact-SHA remote CI must then pass before separate tag and release authorization.",
-    "decision": "QUANTFORGE AI v0.1.0 PUBLICATION CANDIDATE READY — USER AUTHORIZATION REQUIRED"
+    "next_authorization_required": "Final push-triggered CI and exact-SHA remote validation must pass before separate authorization may create the v0.1.0 tag or GitHub Release.",
+    "decision": "QUANTFORGE AI v0.1.0 REPLACEMENT SOURCE CANDIDATE LOCALLY VALIDATED — REMOTE EXACT-SHA VERIFICATION REQUIRED"
   }
 }
