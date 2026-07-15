@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from pathlib import Path
 
@@ -12,12 +13,25 @@ from quantforge.cli.main import main
 from scripts.check_repository import project_version, validate_repository
 from scripts.generate_sbom import generate_sbom, write_sbom
 from scripts.inspect_packages import runtime_requirements
+from scripts.wheel_smoke import runtime_environment_builder, validate_demo_result
 
 
 def test_pytest_explicitly_targets_the_source_tree() -> None:
     root = Path(__file__).resolve().parents[2]
     configuration = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     assert configuration["tool"]["pytest"]["ini_options"]["pythonpath"] == ["src"]
+
+
+def test_wheel_smoke_venv_preserves_posix_shared_library_resolution() -> None:
+    builder = runtime_environment_builder()
+    assert builder.with_pip is True
+    assert builder.symlinks is (os.name != "nt")
+
+
+def test_wheel_smoke_requires_the_actual_terminal_workflow_state() -> None:
+    validate_demo_result({"state": "CHAIR_EXPLANATION", "verdict": "FRAGILE"})
+    with pytest.raises(RuntimeError, match="unexpected governed result"):
+        validate_demo_result({"state": "CLOSED", "verdict": "FRAGILE"})
 
 
 def test_version_identity_is_single_source_and_cli_visible(

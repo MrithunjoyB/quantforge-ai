@@ -19,6 +19,16 @@ def _venv_python(environment: Path) -> Path:
     return environment / "bin/python"
 
 
+def runtime_environment_builder() -> venv.EnvBuilder:
+    """Create relocatable-enough venvs for platform Python launchers.
+
+    POSIX virtual environments use the interpreter symlink so distributions whose
+    launcher resolves a sibling shared library continue to work. Windows launchers
+    retain the standard copied executable behavior.
+    """
+    return venv.EnvBuilder(with_pip=True, symlinks=os.name != "nt")
+
+
 def _run(argv: list[str], cwd: Path, env: dict[str, str]) -> str:
     result = subprocess.run(  # noqa: S603 - argv is constructed from controlled release paths
         argv,
@@ -34,6 +44,12 @@ def _run(argv: list[str], cwd: Path, env: dict[str, str]) -> str:
     return result.stdout.strip()
 
 
+def validate_demo_result(document: dict[str, Any]) -> None:
+    """Require the installed demo to reach the real terminal workflow state and verdict."""
+    if document.get("verdict") != "FRAGILE" or document.get("state") != "CHAIR_EXPLANATION":
+        raise RuntimeError("installed wheel demo returned an unexpected governed result")
+
+
 def smoke_wheel(
     wheel: Path, requirements_lock: Path, version: str, work_dir: Path
 ) -> dict[str, Any]:
@@ -43,7 +59,7 @@ def smoke_wheel(
     environment = work_dir / "runtime-venv"
     outside_source = work_dir / "outside-source"
     outside_source.mkdir()
-    venv.EnvBuilder(with_pip=True).create(environment)
+    runtime_environment_builder().create(environment)
     python = _venv_python(environment)
     env = os.environ.copy()
     env.update(
@@ -102,8 +118,7 @@ def smoke_wheel(
         env,
     )
     demo = json.loads(demo_output)
-    if demo.get("verdict") != "FRAGILE" or demo.get("state") != "CLOSED":
-        raise RuntimeError("installed wheel demo returned an unexpected governed result")
+    validate_demo_result(demo)
     _run(
         [
             str(python),
