@@ -96,7 +96,12 @@ def safe_write_text(path: Path, value: str) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
+        # mkstemp creates a private, exclusively opened file on every supported platform.
+        # Retain explicit descriptor hardening where the POSIX API is available; Windows
+        # protects the file through its inherited ACL and does not expose os.fchmod.
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             stream.write(value)
             stream.flush()
