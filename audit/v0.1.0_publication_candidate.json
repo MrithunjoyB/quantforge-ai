@@ -1,0 +1,370 @@
+{
+  "schema_version": "1.0",
+  "report": "QuantForge AI v0.1.0 Publication-Candidate Audit",
+  "generated_at_utc": "2026-07-15T10:14:44Z",
+  "version": "0.1.0",
+  "source_identity": {
+    "original_phase1_commit": "2e9da09f4470a1c50e756a06ab935d90f1beaa7a",
+    "baseline_commit": "9888f6f64dfb814a9cc07bcdc8d2b4c366ebbe7e",
+    "baseline_message": "Harden Phase 1 after independent audit",
+    "final_local_head": "84deaf8640df331888f3b0da61c8b4279da55211",
+    "final_local_head_semantics": "Exact clean source HEAD subjected to the complete local release-candidate transaction before this report-only audit commit.",
+    "branch": "main",
+    "working_tree_at_validation": "clean",
+    "remotes": [],
+    "original_phase1_is_ancestor": true,
+    "baseline_is_ancestor": true,
+    "history_rewritten": false,
+    "tag_created": false,
+    "push_performed": false,
+    "release_published": false,
+    "report_commit_note": "The normal commit containing this report necessarily follows the attested source HEAD; a Git commit cannot embed its own SHA. Resolve the report-storage commit with Git at handoff."
+  },
+  "version_identity": {
+    "authoritative_source": "src/quantforge/_version.py",
+    "package_metadata": "0.1.0",
+    "runtime": "0.1.0",
+    "cli": "quantforge 0.1.0",
+    "changelog": "0.1.0",
+    "citation_cff": "0.1.0",
+    "release_notes": "0.1.0",
+    "sbom": "0.1.0",
+    "release_reports": "0.1.0",
+    "status": "passed"
+  },
+  "environment": {
+    "implementation": "CPython",
+    "python": "3.12.13",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "timezone": "Asia/Kolkata",
+    "fresh_hash_locked_environment": true,
+    "project_install": "non-editable, no dependency resolution, no build isolation"
+  },
+  "phase1_independent_audit": {
+    "machine_report": "audit/phase1_independent_audit.json",
+    "human_report": "audit/phase1_independent_audit.md",
+    "status": "passed",
+    "phase2_may_begin": true,
+    "verdict": "QUANTFORGE AI PHASE 1 INDEPENDENT AUDIT PASSED — READY FOR PHASE 2",
+    "repaired_high_medium_findings": [
+      "H-01",
+      "H-02",
+      "H-03",
+      "H-04",
+      "H-05",
+      "M-01",
+      "M-02",
+      "M-03",
+      "M-04"
+    ]
+  },
+  "repository_boundary": {
+    "quantforge": {
+      "branch": "main",
+      "remote_count": 0,
+      "working_tree_at_validation": "clean"
+    },
+    "protected_engine": {
+      "head": "9266f317573e90452ca88c7d30196d8b6d6f21a3",
+      "branch": "main",
+      "tracked_diff": "empty",
+      "staged_diff": "empty",
+      "untracked_inventory": "empty",
+      "ignored_inventory_count": 16301,
+      "ignored_inventory_sha256": "9f99224e3a34dfd512442f0e0931ca201a896f66265aefa91d2992a09f4e092b",
+      "v1.0.0_annotated_tag_object": "20ac53c5e4b61ae7b431d5bb263f246e35f8d2a2",
+      "v1.0.0_peeled_target": "2f86b71dbc9f29dbda861942d8afbb10c04b6625",
+      "before_and_after_match": true,
+      "changes_caused_by_task": false
+    }
+  },
+  "files": {
+    "added": [
+      ".gitattributes",
+      ".github/dependabot.yml",
+      ".github/workflows/ci.yml",
+      ".github/workflows/codeql.yml",
+      ".github/workflows/release-candidate.yml",
+      ".github/workflows/reproducibility.yml",
+      ".github/workflows/security.yml",
+      "CITATION.cff",
+      "CODE_OF_CONDUCT.md",
+      "SUPPORT.md",
+      "docs/RELEASE_NOTES_v0.1.0.md",
+      "docs/RELEASE_POLICY.md",
+      "scripts/__init__.py",
+      "scripts/check_repository.py",
+      "scripts/generate_sbom.py",
+      "scripts/inspect_packages.py",
+      "scripts/release_candidate.py",
+      "scripts/verify_determinism.py",
+      "scripts/wheel_smoke.py",
+      "src/quantforge/_version.py",
+      "tests/regression/test_publication_contract.py"
+    ],
+    "modified": [
+      ".gitignore",
+      "CHANGELOG.md",
+      "CONTRIBUTING.md",
+      "README.md",
+      "SECURITY.md",
+      "pyproject.toml",
+      "requirements-dev.in",
+      "requirements-dev.lock",
+      "scripts/check_secrets.py",
+      "scripts/quality.sh",
+      "src/quantforge/__init__.py",
+      "src/quantforge/cli/main.py",
+      "tests/regression/test_packaging_contract.py",
+      "tests/unit/test_audit.py",
+      "tests/unit/test_evidence.py",
+      "tests/unit/test_security_models.py",
+      "tests/unit/test_serialization.py"
+    ],
+    "report_only_files": [
+      "audit/v0.1.0_publication_candidate.json",
+      "audit/v0.1.0_publication_candidate.md"
+    ]
+  },
+  "workflows": {
+    "inventory": [
+      "ci.yml",
+      "codeql.yml",
+      "release-candidate.yml",
+      "reproducibility.yml",
+      "security.yml"
+    ],
+    "dependabot": "weekly grouped Python and GitHub Actions updates",
+    "least_privilege": "passed",
+    "immutable_action_pins": "passed",
+    "persisted_checkout_credentials": false,
+    "mutable_docker_tags": false,
+    "static_yaml_and_policy_validation": "passed",
+    "matrix": [
+      {
+        "runner": "ubuntu-24.04",
+        "python": "3.12",
+        "scope": "complete quality, determinism, packaging, and installed-wheel gates"
+      },
+      {
+        "runner": "ubuntu-24.04",
+        "python": "3.13",
+        "scope": "compatibility tests and packaging"
+      },
+      {
+        "runner": "ubuntu-24.04",
+        "python": "3.14",
+        "scope": "compatibility tests and packaging"
+      },
+      {
+        "runner": "macos-14",
+        "python": "3.12",
+        "scope": "compatibility tests and packaging"
+      },
+      {
+        "runner": "windows-2022",
+        "python": "3.12",
+        "scope": "compatibility tests and packaging"
+      }
+    ],
+    "remote_status": "Definitions validated locally; no remote job has run. Exact-SHA remote success is required after publication authorization."
+  },
+  "action_sha_inventory": [
+    {
+      "action": "actions/checkout",
+      "release": "v6.0.2",
+      "sha": "de0fac2e4500dabe0009e67214ff5f5447ce83dd",
+      "workflows": ["ci.yml", "codeql.yml", "release-candidate.yml", "reproducibility.yml", "security.yml"]
+    },
+    {
+      "action": "actions/setup-python",
+      "release": "v6.2.0",
+      "sha": "a309ff8b426b58ec0e2a45f0f869d46889d02405",
+      "workflows": ["ci.yml", "release-candidate.yml", "reproducibility.yml", "security.yml"]
+    },
+    {
+      "action": "actions/upload-artifact",
+      "release": "v7.0.1",
+      "sha": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+      "workflows": ["release-candidate.yml", "reproducibility.yml"]
+    },
+    {
+      "action": "github/codeql-action/init",
+      "release": "v4.37.0",
+      "sha": "99df26d4f13ea111d4ec1a7dddef6063f76b97e9",
+      "workflows": ["codeql.yml"]
+    },
+    {
+      "action": "github/codeql-action/analyze",
+      "release": "v4.37.0",
+      "sha": "99df26d4f13ea111d4ec1a7dddef6063f76b97e9",
+      "workflows": ["codeql.yml"]
+    }
+  ],
+  "dependency_locks": {
+    "direct_runtime_dependencies": ["pydantic==2.12.5"],
+    "runtime_distributions": 5,
+    "development_distributions": 60,
+    "runtime_transitive_hash_lock": "passed",
+    "development_transitive_hash_lock": "passed",
+    "runtime_audit": "No known vulnerabilities found",
+    "development_audit": "No known vulnerabilities found",
+    "hashes": {
+      "requirements.in": "ece21f5d55b26eaf3298e5a389f5a3817d9381df81cb2494170c619391bd6c07",
+      "requirements.lock": "e16c4341966c9dc05a8dddfe138798b6b70f1f79c01ff7e9383d0e38cb757d85",
+      "requirements-dev.in": "74189244483457489055a46d9bcf4554b7a8332d5e7be6bf14cdd455f2032119",
+      "requirements-dev.lock": "37f2d556822a64923ab8159ed6ea8449ec9ff024ec3b8ecb291b784baf52f577"
+    }
+  },
+  "quality_results": {
+    "formatting": "passed",
+    "ruff": "passed",
+    "strict_mypy": "passed; 37 source files",
+    "full_pytest": "289 passed",
+    "reverse_file_order_pytest": "289 passed",
+    "malicious_input_pytest": "25 passed; 264 deselected",
+    "skipped": 0,
+    "branch_coverage": {
+      "enabled": true,
+      "overall_percent": 92.4,
+      "required_percent": 90,
+      "covered_branches": 424,
+      "total_branches": 502,
+      "missing_branches": 78
+    },
+    "governance_critical_coverage_percent": 92,
+    "governance_critical_required_percent": 90,
+    "local_links_checked": 20,
+    "citation_cff": "passed with cffconvert==2.0.0",
+    "repository_contracts": "passed"
+  },
+  "failure_repair_record": {
+    "initial_failure": "The first complete candidate run reached the outside-source wheel test, where the bundled macOS Python copied an @rpath-based launcher into a venv without its sibling shared library.",
+    "root_cause": "venv.EnvBuilder defaults to copied POSIX launchers, unlike the working symlink behavior of the venv CLI for this interpreter distribution.",
+    "repair": "Use interpreter symlinks on POSIX and copied launchers on Windows; assert the real terminal workflow state CHAIR_EXPLANATION.",
+    "regression_tests_added": 2,
+    "repair_commit": "84deaf8640df331888f3b0da61c8b4279da55211",
+    "fresh_environment_rerun": "passed"
+  },
+  "packaging_results": {
+    "wheel": {
+      "filename": "quantforge_ai-0.1.0-py3-none-any.whl",
+      "sha256": "80b6b24c59829b2b265c60375b4cde95d2ceef93ede5546ef74404bf046de71a",
+      "members": 38,
+      "metadata": "passed",
+      "record_integrity": "passed"
+    },
+    "sdist": {
+      "filename": "quantforge_ai-0.1.0.tar.gz",
+      "sha256": "95ee1fe39e08855961281b672537959e44ab7bd1b5ad0be029d15c83d3665e18",
+      "members": 95,
+      "archive_safety": "passed"
+    },
+    "byte_identical_double_build": true,
+    "installed_wheel": {
+      "outside_source_tree": true,
+      "runtime_version": "0.1.0",
+      "cli_version": "quantforge 0.1.0",
+      "pip_check": "No broken requirements found.",
+      "demo_verdict": "FRAGILE",
+      "audit_events": 12,
+      "semantic_audit_replay": "passed",
+      "status": "passed"
+    },
+    "license_and_notice_in_distributions": true
+  },
+  "sbom": {
+    "filename": "quantforge-ai-v0.1.0-sbom.cdx.json",
+    "format": "CycloneDX 1.6 JSON",
+    "sha256": "a5e94fb5dce4b2c430f4c7bc792545bbca06bea8eed2d25cb35ea21f68ef1e09",
+    "serial_number": "urn:uuid:abc0b703-b514-5d87-8424-7042a4f0971e",
+    "root_component": "pkg:pypi/quantforge-ai@0.1.0",
+    "source_commit": "84deaf8640df331888f3b0da61c8b4279da55211",
+    "wheel_sha256": "80b6b24c59829b2b265c60375b4cde95d2ceef93ede5546ef74404bf046de71a",
+    "runtime_components": 5,
+    "dependency_entries": 6,
+    "generator": "cyclonedx-python-lib==9.1.0",
+    "model_validation": "passed"
+  },
+  "checksums": {
+    "filename": "SHA256SUMS",
+    "sha256": "1e879670eaeb50d9a0cd5c1f7513fcb1ce6b38181ebec4cceafe000c8a7f385f",
+    "assets_verified": 6,
+    "independent_verification": "passed"
+  },
+  "determinism": {
+    "status": "passed",
+    "artifact_comparisons": 15,
+    "byte_identical": true,
+    "semantic_audit_replay": "passed",
+    "verdict_stability": "passed",
+    "scenarios": {
+      "fragile": {
+        "verdict": "FRAGILE",
+        "file_sha256": {
+          "audit.jsonl": "b2dff48e4104b3dd44c3a8e570fbe1fdc44248c21b22a2bf1d05ed8389b6cb01",
+          "bundle_manifest.json": "69c583816713ed8b6135f34b572cbd4f1c8f175dfe292b5aff2f411e664642ac",
+          "case.json": "b4229fdd0e47fec0a61c3bd64cab2eaa59017f918e3d26c767b31b388eec79d4",
+          "claim_graph.json": "f921df1ffcac4a0d09c2fb15950f9f3b5b01295d3811d97d3ebfcd9a38d7675d",
+          "evidence_ledger.json": "4a7c6a180a27084608cacb049a04c0e60db7a7cdf8cbb535ebc4a678897c6a62"
+        }
+      },
+      "inconclusive": {
+        "verdict": "INCONCLUSIVE",
+        "file_sha256": {
+          "audit.jsonl": "a6e3aa6329918c41f117c53e3a106965138426071264fc0ffb607eca264424e0",
+          "bundle_manifest.json": "61a928cff2d7d2b12e9fb68bfe9f902c6660faa95b0f28c0534b73d5f03f50b9",
+          "case.json": "b4cc9a45e7862808fb523ad99017f9939296bec0c0d1d08faca9c17b55889dae",
+          "claim_graph.json": "364fdd3af2d1810a08e6ca7d75c877d88e6fae2628f4abab0c51f28a8404b6f9",
+          "evidence_ledger.json": "f7bf27d7a71b0b2fbcf38c57407e6c08f051cb71186b6039163f5f8ad0c7b8ef"
+        }
+      },
+      "provisional": {
+        "verdict": "PROVISIONALLY_SUPPORTED",
+        "file_sha256": {
+          "audit.jsonl": "04a7eb1fad1bbe2bd7f989e42499025eb46e27cd47d9542882e57e2a21eca37a",
+          "bundle_manifest.json": "ba2940d86ed3e4a60fa409c134daef3bd72de170ea3d1678d8a9fddd9fb296ea",
+          "case.json": "8331c4d9d743bc62f1ace59624ee4df2616aa539203baafdf14bde21bd3d3846",
+          "claim_graph.json": "427de4e0e6c96da7266941089d0f5118c90532998107f2898fedafdb99f2432b",
+          "evidence_ledger.json": "5d81de034095ea10fb76965706d666a315d752e6a9d5f3e5cd59fe9e277db993"
+        }
+      }
+    }
+  },
+  "security": {
+    "current_and_reachable_history_secret_scan": "passed",
+    "runtime_dependency_audit": "No known vulnerabilities found",
+    "development_dependency_audit": "No known vulnerabilities found",
+    "malicious_serialized_input_tests": "25 passed",
+    "package_content_and_archive_integrity": "passed",
+    "workflow_least_privilege_and_pin_policy": "passed",
+    "codeql_workflow": "defined but not remotely executed",
+    "credentials_used": false
+  },
+  "documentation": {
+    "required_publication_files": "present",
+    "readme_first_screen": "passed",
+    "local_links": "20 passed",
+    "citation_schema": "passed",
+    "license_and_notice": "passed",
+    "release_policy": "transactional exact-SHA policy present",
+    "claims_and_limitations": "accurate for audited offline Phase 1 scope"
+  },
+  "remaining_limitations": [
+    "Only macOS arm64 with CPython 3.12.13 was executed locally; the declared CI matrix remains unclaimed until exact-SHA remote jobs pass.",
+    "The local audit chain is tamper-evident but is not signed or externally anchored; whole-artifact-set replacement remains a Phase 2 boundary.",
+    "No live model provider or real OpenAI execution is present.",
+    "No real C++ engine integration, market-data ingestion, database, retrieval system, or web UI is present.",
+    "No broker connectivity, order submission, live trading, production deployment, profitability claim, or investment advice is present.",
+    "No GitHub repository, remote, push, tag, release, or asset upload was created by this task."
+  ],
+  "publication_readiness": {
+    "github_publication_ready": true,
+    "local_validation": "passed",
+    "release_publication_authorized": false,
+    "remote_exact_sha_ci_required": true,
+    "next_authorization_required": "Explicit user authorization to create the GitHub repository, configure its first remote, and push the exact final report commit. Exact-SHA remote CI must then pass before separate tag and release authorization.",
+    "decision": "QUANTFORGE AI v0.1.0 PUBLICATION CANDIDATE READY — USER AUTHORIZATION REQUIRED"
+  }
+}
