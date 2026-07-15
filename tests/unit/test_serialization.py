@@ -72,7 +72,14 @@ def test_safe_json_round_trip_and_file_controls(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "value.json"
     safe_write_json(target, {"ok": True})
     assert safe_load_json(target) == {"ok": True}
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    mode = stat.S_IMODE(target.stat().st_mode)
+    if os.name == "nt":
+        # Windows synthesizes POSIX mode bits from DOS attributes; access control is
+        # provided by the inherited ACL rather than group/other mode-bit fields.
+        assert mode & stat.S_IRUSR
+        assert mode & stat.S_IWUSR
+    else:
+        assert mode == 0o600
     assert not list(target.parent.glob(f".{target.name}.*"))
     with pytest.raises(ValueError, match="size"):
         safe_load_json(target, max_bytes=1)
