@@ -10,9 +10,11 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,55 @@ from scripts.wheel_smoke import smoke_wheel
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 TEST_COUNT_RE = re.compile(r"(?P<count>[0-9]+) passed")
 COVERAGE_TOTAL_RE = re.compile(r"(?m)^TOTAL\s+.*?\s(?P<percent>[0-9]+)%\s*$")
+PROTECTED_ENGINE_TRACKED_TREE = "b9ddffe46a5934f800a28fc487e10be2e67c7e33"
+BUILD_ROOT_RE = re.compile(r"^build(?:-[A-Za-z0-9._-]+)?$")
+SENSITIVE_IGNORED_SUFFIXES = {".key", ".kdbx", ".p12", ".pem", ".pfx"}
+SENSITIVE_IGNORED_NAMES = {
+    ".env",
+    ".netrc",
+    "credentials",
+    "id_ed25519",
+    "id_rsa",
+    "secrets",
+    "tokens",
+}
+SENSITIVE_IGNORED_WORDS = {
+    "api_key",
+    "apikey",
+    "credential",
+    "credentials",
+    "secret",
+    "secrets",
+    "token",
+    "tokens",
+}
+SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".py", ".sh"}
+IGNORED_TEXT_SUFFIXES = {
+    "",
+    ".cfg",
+    ".cmake",
+    ".conf",
+    ".csv",
+    ".ini",
+    ".json",
+    ".log",
+    ".md",
+    ".py",
+    ".sh",
+    ".toml",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+MAX_INLINE_IGNORED_SECRET_SCAN_BYTES = 2 * 1024 * 1024
+SECRET_CONTENT_PATTERNS: tuple[tuple[str, re.Pattern[bytes]], ...] = (
+    ("AWS access key", re.compile(rb"(?:AKIA|ASIA)[A-Z0-9]{16}")),
+    ("GitHub token", re.compile(rb"gh[pousr]_[A-Za-z0-9_]{30,}")),
+    ("OpenAI key", re.compile(rb"sk-(?:proj-)?[A-Za-z0-9_-]{20,}")),
+    ("private key", re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
+    ("Slack token", re.compile(rb"xox[baprs]-[A-Za-z0-9-]{20,}")),
+)
 
 
 class ReleaseValidationError(RuntimeError):
@@ -135,6 +186,180 @@ def verify_quantforge_boundary(
     }
 
 
+def _ignored_path_parts(raw_path: bytes) -> tuple[str, tuple[str, ...]]:
+    if not raw_path or raw_path.startswith(b"/") or b"\\" in raw_path:
+        raise ReleaseValidationError("protected engine has a malformed ignored path")
+    raw_parts = raw_path.split(b"/")
+    if any(part in {b"", b".", b".."} for part in raw_parts):
+        raise ReleaseValidationError("protected engine ignored path contains traversal")
+    display = os.fsdecode(raw_path)
+    return display, tuple(os.fsdecode(part) for part in raw_parts)
+
+
+def _ignored_artifact_class(path: str, parts: tuple[str, ...]) -> str:
+    top = parts[0]
+    name = parts[-1]
+    suffix = Path(name).suffix.lower()
+
+    if "__pycache__" in parts:
+        if suffix not in {".pyc", ".pyo"}:
+            raise ReleaseValidationError(
+                f"protected engine Python cache contains a non-bytecode file: {path}"
+            )
+        return "python_bytecode"
+    if BUILD_ROOT_RE.fullmatch(top):
+        if "/Testing/Temporary/" in f"/{path}":
+            return "ctest_output"
+        if "/CMakeFiles/" in f"/{path}" or name in {
+            "CMakeCache.txt",
+            "Makefile",
+            "cmake_install.cmake",
+        }:
+            return "cmake_build_output"
+        return "compiled_build_output"
+    if top == "results":
+        return "generated_result"
+    if top == "test_results":
+        return "generated_test_result"
+    if top == "reproduced":
+        return "reconstruction_output"
+    if top == ".matplotlib-cache":
+        return "matplotlib_cache"
+    if top == "dist":
+        return "distribution_output"
+    if top in {".venv", "venv"}:
+        return "local_virtual_environment"
+    if (
+        top == "data"
+        and len(parts) > 1
+        and (parts[1] == "local" or (len(parts) == 2 and suffix == ".csv"))
+    ):
+        return "local_data"
+    if len(parts) == 1 and name in {
+        ".DS_Store",
+        "NEXT.csv",
+        "backtester_tests",
+        "build_backtester",
+        "test_next_bar.csv",
+    }:
+        return "documented_local_artifact"
+    if top.endswith(".failed"):
+        return "failed_run_evidence"
+    if top.endswith(".dSYM") or (len(parts) == 1 and suffix in {".o", ".out"}):
+        return "compiled_build_output"
+    raise ReleaseValidationError(f"protected engine has an unapproved ignored path: {path}")
+
+
+def _sensitive_ignored_name(parts: tuple[str, ...]) -> bool:
+    for part in parts:
+        lowered = part.lower()
+        suffix = Path(lowered).suffix
+        words = set(re.split(r"[._-]+", lowered))
+        if (
+            lowered in SENSITIVE_IGNORED_NAMES
+            or lowered.startswith(".env.")
+            or suffix in SENSITIVE_IGNORED_SUFFIXES
+            or bool(words & SENSITIVE_IGNORED_WORDS)
+        ):
+            return True
+        if lowered in {".git", ".github", ".hg", ".svn"}:
+            return True
+    return False
+
+
+def _known_generated_source(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return bool(re.search(r"/CMakeFiles/[^/]+/CompilerId(?:C|CXX)/", f"/{normalized}"))
+
+
+def _source_is_approved(path: str, parts: tuple[str, ...], artifact_class: str) -> bool:
+    if Path(parts[-1]).suffix.lower() not in SOURCE_SUFFIXES:
+        return True
+    if artifact_class == "cmake_build_output" and _known_generated_source(path):
+        return True
+    if artifact_class == "local_virtual_environment":
+        return "site-packages" in parts or "bin" in parts or "Scripts" in parts
+    return False
+
+
+def _secret_content_findings(
+    path: Path, metadata: os.stat_result, artifact_class: str
+) -> tuple[list[str], bool]:
+    suffix = path.suffix.lower()
+    if artifact_class == "compiled_build_output" and suffix in {"", ".a", ".dylib", ".o"}:
+        return [], False
+    if suffix not in IGNORED_TEXT_SUFFIXES:
+        return [], False
+    if metadata.st_size > MAX_INLINE_IGNORED_SECRET_SCAN_BYTES:
+        return [], True
+    data = path.read_bytes()
+    if b"\0" in data:
+        return [], False
+    return (
+        sorted(label for label, pattern in SECRET_CONTENT_PATTERNS if pattern.search(data)),
+        False,
+    )
+
+
+def _classify_ignored_inventory(engine: Path, ignored: bytes) -> dict[str, Any]:
+    if ignored and not ignored.endswith(b"\0"):
+        raise ReleaseValidationError("protected engine ignored inventory is not NUL terminated")
+    raw_paths = ignored.removesuffix(b"\0").split(b"\0") if ignored else []
+    engine_resolved = engine.resolve(strict=True)
+    classes: Counter[str] = Counter()
+    large_text_scan_skips = 0
+
+    for raw_path in raw_paths:
+        display, parts = _ignored_path_parts(raw_path)
+        absolute = engine / display
+        metadata = absolute.lstat()
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ReleaseValidationError(
+                f"protected engine ignored inventory contains a symlink: {display}"
+            )
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ReleaseValidationError(
+                f"protected engine ignored inventory contains a non-regular file: {display}"
+            )
+        try:
+            absolute.resolve(strict=True).relative_to(engine_resolved)
+        except ValueError as error:
+            raise ReleaseValidationError(
+                f"protected engine ignored path escapes the repository: {display}"
+            ) from error
+
+        artifact_class = _ignored_artifact_class(display, parts)
+        if _sensitive_ignored_name(parts):
+            raise ReleaseValidationError(
+                f"protected engine ignored path has a forbidden sensitive name: {display}"
+            )
+        if not _source_is_approved(display, parts, artifact_class):
+            raise ReleaseValidationError(
+                f"protected engine ignored path hides unapproved source: {display}"
+            )
+        secret_findings, skipped_large_text = _secret_content_findings(
+            absolute, metadata, artifact_class
+        )
+        large_text_scan_skips += int(skipped_large_text)
+        if secret_findings:
+            raise ReleaseValidationError(
+                "protected engine ignored path contains a strong secret indicator "
+                f"({', '.join(secret_findings)}): {display}"
+            )
+        classes[artifact_class] += 1
+
+    return {
+        "ignored_allowed_ephemeral_count": len(raw_paths),
+        "ignored_class_counts": dict(sorted(classes.items())),
+        "ignored_forbidden_count": 0,
+        "ignored_inventory_count": len(raw_paths),
+        "ignored_inventory_policy": "classified_ephemeral_v1",
+        "ignored_inventory_sha256": hashlib.sha256(ignored).hexdigest(),
+        "ignored_inventory_status": "reported_not_frozen",
+        "ignored_large_text_scan_skip_count": large_text_scan_skips,
+    }
+
+
 def engine_snapshot(engine: Path) -> dict[str, Any]:
     ignored = _bytes(
         ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "-z"], engine
@@ -142,17 +367,18 @@ def engine_snapshot(engine: Path) -> dict[str, Any]:
     tracked_diff = _bytes(["git", "diff", "--no-ext-diff", "--binary"], engine)
     staged_diff = _bytes(["git", "diff", "--cached", "--no-ext-diff", "--binary"], engine)
     untracked = _bytes(["git", "ls-files", "--others", "--exclude-standard", "-z"], engine)
-    return {
+    snapshot = {
         "branch": git_text(engine, "branch", "--show-current"),
         "head": git_text(engine, "rev-parse", "HEAD"),
-        "ignored_inventory_count": ignored.count(b"\0"),
-        "ignored_inventory_sha256": hashlib.sha256(ignored).hexdigest(),
         "staged_diff": "empty" if not staged_diff else "nonempty",
+        "tracked_tree": git_text(engine, "rev-parse", "HEAD^{tree}"),
         "tracked_diff": "empty" if not tracked_diff else "nonempty",
         "untracked_inventory": "empty" if not untracked else "nonempty",
         "v1.0.0_annotated_tag_object": git_text(engine, "rev-parse", "refs/tags/v1.0.0"),
         "v1.0.0_peeled_target": git_text(engine, "rev-parse", "v1.0.0^{}"),
     }
+    snapshot.update(_classify_ignored_inventory(engine, ignored))
+    return snapshot
 
 
 def expected_engine_boundary(root: Path) -> dict[str, Any]:
@@ -160,9 +386,8 @@ def expected_engine_boundary(root: Path) -> dict[str, Any]:
     protected = audit["repository_boundaries"]["protected_engine"]
     return {
         "head": protected["head_before"],
-        "ignored_inventory_count": protected["ignored_inventory_count_before_and_after"],
-        "ignored_inventory_sha256": protected["ignored_inventory_sha256_before_and_after"],
         "staged_diff": "empty",
+        "tracked_tree": PROTECTED_ENGINE_TRACKED_TREE,
         "tracked_diff": "empty",
         "untracked_inventory": "empty",
         "v1.0.0_annotated_tag_object": protected["v1_0_0_annotated_tag_object_before"],
@@ -179,7 +404,24 @@ def verify_engine_boundary(root: Path, *, allow_recorded: bool = False) -> dict[
                 "live boundary evidence"
             )
         recorded = expected_engine_boundary(root)
-        recorded.update({"branch": "main", "verification": "recorded independent-audit evidence"})
+        audit = json.loads(
+            (root / "audit/phase1_independent_audit.json").read_text(encoding="utf-8")
+        )
+        protected = audit["repository_boundaries"]["protected_engine"]
+        recorded.update(
+            {
+                "branch": "main",
+                "ignored_allowed_ephemeral_count": None,
+                "ignored_class_counts": {},
+                "ignored_forbidden_count": None,
+                "ignored_inventory_count": protected["ignored_inventory_count_before_and_after"],
+                "ignored_inventory_policy": "historical_path_snapshot",
+                "ignored_inventory_sha256": protected["ignored_inventory_sha256_before_and_after"],
+                "ignored_inventory_status": "recorded_not_live",
+                "ignored_large_text_scan_skip_count": None,
+                "verification": "recorded independent-audit evidence",
+            }
+        )
         return recorded
     observed = engine_snapshot(engine)
     expected = expected_engine_boundary(root)
@@ -190,7 +432,7 @@ def verify_engine_boundary(root: Path, *, allow_recorded: bool = False) -> dict[
             )
     if observed["branch"] != "main":
         raise ReleaseValidationError("protected engine branch differs from the recorded boundary")
-    observed["verification"] = "live read-only comparison"
+    observed["verification"] = "live classified read-only comparison"
     return observed
 
 
@@ -301,7 +543,11 @@ def _release_markdown(report: dict[str, Any]) -> str:
             "## Protected engine",
             "",
             f"- HEAD: `{engine['head']}`",
-            f"- Ignored inventory SHA-256: `{engine['ignored_inventory_sha256']}`",
+            f"- Tracked tree: `{engine['tracked_tree']}`",
+            f"- Ignored inventory: {engine['ignored_inventory_count']} classified entries "
+            f"(reported, not frozen), SHA-256 `{engine['ignored_inventory_sha256']}`",
+            f"- Ignored-path policy: `{engine['ignored_inventory_policy']}`; "
+            f"forbidden entries: {engine['ignored_forbidden_count']}",
             f"- Annotated v1.0.0 tag object: `{engine['v1.0.0_annotated_tag_object']}`",
             f"- Peeled target: `{engine['v1.0.0_peeled_target']}`",
             "- Tracked, staged, and untracked state remained empty.",

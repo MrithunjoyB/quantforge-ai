@@ -16,6 +16,29 @@ wheel and sdist inventories, installed-wheel smoke results, deterministic scenar
 and development audit results, a CycloneDX SBOM, SHA-256 checksums, workflow/action-pin inventory,
 and repository-boundary proof.
 
+## Protected-engine repository boundary
+
+The external C++ engine boundary is source-oriented. A live comparison requires the recorded
+`main` branch, exact HEAD, exact tracked-tree object, empty tracked and staged diffs, no untracked
+non-ignored paths, and the exact annotated `v1.0.0` tag object and peeled target. Those invariants
+are blockers when they drift.
+
+Ignored local state is classified and reported, not frozen as an immutable filesystem snapshot.
+The bounded allowlist is derived from the engine's build, test, data, and output contracts:
+
+- CMake and CTest output under `build/` or a named `build-*` root;
+- generated `results/`, `test_results/`, `reproduced/`, distribution, and Matplotlib output;
+- Python bytecode under `__pycache__/` and conventional local virtual environments;
+- the documented local-data boundary and named compiler/test artifacts.
+
+Every ignored entry must still be a regular in-repository file in one of those classes. Symlinks,
+traversal, VCS or workflow-control paths, sensitive names, strong credential indicators, hidden
+source outside CMake compiler-identification output or an installed virtual environment, and every
+unknown ignored path remain blockers. Moving a sensitive or source file under an allowlisted parent
+does not make it permissible. The NUL-delimited ignored path count and SHA-256 remain useful
+diagnostic evidence and must be stable during one validation transaction, but ordinary generated
+drift between separate local runs is not a released-source defect.
+
 ## Transactional procedure
 
 1. **Clean source:** start from a clean working tree and index, no untracked publication input, no
