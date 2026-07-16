@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -34,7 +35,32 @@ from quantforge.storage import (
 from quantforge.workflow.demo import run_demo
 
 
-class FixtureAdapter(LocalCppV1Adapter):
+class ReleaseFixtureAdapter(LocalCppV1Adapter):
+    @staticmethod
+    def _run_bounded(
+        argv: tuple[str, ...],
+        *,
+        cwd: Path,
+        environment: dict[str, str],
+        timeout_seconds: int,
+        log_directory: Path | None,
+        log_name: str,
+        require_success: bool = True,
+    ) -> _ProcessResult:
+        if argv and Path(argv[0]).name == "quant_cli_fixture.py":
+            argv = (sys.executable, *argv)
+        return LocalCppV1Adapter._run_bounded(
+            argv,
+            cwd=cwd,
+            environment=environment,
+            timeout_seconds=timeout_seconds,
+            log_directory=log_directory,
+            log_name=log_name,
+            require_success=require_success,
+        )
+
+
+class FixtureAdapter(ReleaseFixtureAdapter):
     def verify_release_identity(self) -> EngineIdentity:
         self._validate_executable()
         return EngineIdentity(executable_sha256=_sha256(self._executable))
@@ -68,7 +94,7 @@ print("validation passed")
             path.write_text('{"fixture":"synthetic"}\n', encoding="utf-8")
         else:
             path.write_text("Date,Close\n2026-01-01,1\n", encoding="utf-8")
-    executable = tmp_path / "quant_cli_fixture"
+    executable = tmp_path / "quant_cli_fixture.py"
     executable.write_text(
         f"""#!{sys.executable}
 import json
@@ -164,7 +190,7 @@ def test_real_release_identity_checks_exact_remote_tag_and_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved_remote: str
 ) -> None:
     repository, executable, work_root = _fake_environment(tmp_path)
-    adapter = LocalCppV1Adapter(
+    adapter = ReleaseFixtureAdapter(
         repository=repository,
         executable=executable,
         expected_executable_sha256=_sha256(executable),
@@ -418,7 +444,10 @@ def test_adapter_rejects_invalid_roots_boundaries_and_process_vectors(tmp_path: 
     with pytest.raises(ValueError, match="work root"):
         bad_work._validate_work_root()
     executable.chmod(0o600)
-    with pytest.raises(ValueError, match="not executable"):
+    if os.name == "posix":
+        with pytest.raises(ValueError, match="not executable"):
+            adapter._validate_executable()
+    else:
         adapter._validate_executable()
 
 

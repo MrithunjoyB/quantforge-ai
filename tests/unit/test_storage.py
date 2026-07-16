@@ -211,12 +211,17 @@ def test_database_replacement_during_reconstruction_is_detected(
         nonlocal replaced
         events = original(connection, case_id)
         if not replaced:
-            os.replace(replacement, store.path)
+            try:
+                os.replace(replacement, store.path)
+            except PermissionError:
+                if os.name != "nt":
+                    raise
+                raise ValueError("case-store database replacement was blocked by the OS") from None
             replaced = True
         return events
 
     monkeypatch.setattr(store, "_load_events", replace_after_read)
-    with pytest.raises(ValueError, match="replaced"):
+    with pytest.raises(ValueError, match=r"replaced|replacement was blocked"):
         store.reconstruct("case_provisional")
 
 

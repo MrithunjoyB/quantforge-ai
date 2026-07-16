@@ -37,6 +37,7 @@ def test_repeated_exports_are_byte_identical_and_independently_reconstruct(
     assert first.export_id == second.export_id
     assert first.manifest_hash == second.manifest_hash
     assert _file_hashes(tmp_path / "first") == _file_hashes(tmp_path / "second")
+    assert b"\r\n" not in (tmp_path / "first/audit.jsonl").read_bytes()
     verified = verify_case_package(tmp_path / "first")
     assert verified["valid"] is True
     assert verified["revision"] == 12

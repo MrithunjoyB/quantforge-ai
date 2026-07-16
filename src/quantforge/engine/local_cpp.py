@@ -425,7 +425,9 @@ class LocalCppV1Adapter(EngineAdapter):
         if self._executable.is_symlink() or not self._executable.is_file():
             raise ValueError("engine executable must be a regular non-symlink file")
         metadata = self._executable.stat()
-        if metadata.st_size > 128 * 1024 * 1024 or not metadata.st_mode & stat.S_IXUSR:
+        if metadata.st_size > 128 * 1024 * 1024 or (
+            os.name == "posix" and not metadata.st_mode & stat.S_IXUSR
+        ):
             raise ValueError("engine executable is too large or is not executable")
         if _sha256_file(self._executable) != self._expected_executable_sha256:
             raise ValueError("engine executable SHA-256 differs from the approved identity")
