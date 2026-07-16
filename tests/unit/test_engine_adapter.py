@@ -153,8 +153,15 @@ def test_approved_fixture_identity_is_independent_of_staging(tmp_path: Path) -> 
     )
 
 
+@pytest.mark.parametrize(
+    "approved_remote",
+    [
+        "https://github.com/MrithunjoyB/cpp-event-driven-backtester",
+        "https://github.com/MrithunjoyB/cpp-event-driven-backtester.git",
+    ],
+)
 def test_real_release_identity_checks_exact_remote_tag_and_version(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved_remote: str
 ) -> None:
     repository, executable, work_root = _fake_environment(tmp_path)
     adapter = LocalCppV1Adapter(
@@ -166,9 +173,7 @@ def test_real_release_identity_checks_exact_remote_tag_and_version(
 
     def git_result(*arguments: str, **_kwargs: object) -> _ProcessResult:
         values = {
-            ("config", "--get", "remote.origin.url"): (
-                b"https://github.com/MrithunjoyB/cpp-event-driven-backtester.git\n"
-            ),
+            ("config", "--get", "remote.origin.url"): (f"{approved_remote}\n".encode()),
             ("status", "--porcelain=v1", "--untracked-files=no"): b"",
             ("rev-parse", "refs/tags/v1.0.0"): (b"20ac53c5e4b61ae7b431d5bb263f246e35f8d2a2\n"),
             ("rev-parse", "refs/tags/v1.0.0^{}"): (b"2f86b71dbc9f29dbda861942d8afbb10c04b6625\n"),

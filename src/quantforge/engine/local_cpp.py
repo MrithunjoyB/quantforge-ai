@@ -55,6 +55,7 @@ MAX_VERSION_SECONDS: Final = 10
 MAX_OUTPUT_FILES: Final = 256
 MAX_CSV_ROWS: Final = 2_000_000
 _EXPECTED_REMOTE_URLS: Final = {
+    "https://github.com/MrithunjoyB/cpp-event-driven-backtester",
     "https://github.com/MrithunjoyB/cpp-event-driven-backtester.git",
     "git@github.com:MrithunjoyB/cpp-event-driven-backtester.git",
 }
