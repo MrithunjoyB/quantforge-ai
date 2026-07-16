@@ -338,7 +338,13 @@ class AuditLog:
         )
 
     @classmethod
-    def read_jsonl(cls, path: Path, *, max_bytes: int = 2_000_000) -> AuditLog:
+    def read_jsonl(
+        cls,
+        path: Path,
+        *,
+        max_bytes: int = 2_000_000,
+        require_complete: bool = True,
+    ) -> AuditLog:
         reject_symlink_components(path)
         if path.is_symlink() or not path.is_file() or path.stat().st_size > max_bytes:
             raise ValueError("audit input must be a bounded regular file")
@@ -354,5 +360,5 @@ class AuditLog:
         if not events:
             raise ValueError("audit input cannot be empty")
         log = cls(tuple(events))
-        log.verify(require_complete=True)
+        log.verify(require_complete=require_complete)
         return log
