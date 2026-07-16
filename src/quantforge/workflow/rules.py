@@ -51,7 +51,7 @@ RULES: tuple[TransitionRule, ...] = (
         WorkflowState.CONSTITUTION_LOCKED,
         WorkflowState.EXPERIMENT_EXECUTED,
         RoleName.SYSTEM,
-        frozenset({"load_mock_evidence"}),
+        frozenset({"admit_engine_evidence", "load_mock_evidence"}),
     ),
     TransitionRule(
         WorkflowState.EXPERIMENT_EXECUTED,
