@@ -91,3 +91,50 @@ jobs:
         run: python -m scripts.inspect_packages --dist-dir dist
       - name: Verify runtime and CLI versions
         run: python -c "import quantforge, subprocess, sys; assert quantforge.__version__ == '0.1.0'; subprocess.run([sys.executable, '-m', 'quantforge', '--version'], check=True)"
+
+  cpp-v1-adapter:
+    name: C++ v1.0.0 adapter / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      - name: Check out exact QuantForge source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: quantforge-ai
+          persist-credentials: false
+      - name: Check out immutable C++ v1.0.0 source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: MrithunjoyB/cpp-event-driven-backtester
+          ref: v1.0.0
+          fetch-depth: 0
+          fetch-tags: true
+          path: cpp-engine
+          persist-credentials: false
+      - name: Set up Python 3.12 with lock-bound cache
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: quantforge-ai/requirements-dev.lock
+      - name: Install the reviewed QuantForge development lock
+        working-directory: quantforge-ai
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Build the immutable C++ release target
+        working-directory: cpp-engine
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DQUANT_ENABLE_STRICT_WARNINGS=ON
+          && cmake --build build --parallel 2
+      - name: Exercise the read-only release adapter twice
+        working-directory: quantforge-ai
+        run: python -m pytest -q tests/integration/test_cpp_v1_adapter.py
+        env:
+          QUANTFORGE_CPP_V1_EXECUTABLE: ${{ github.workspace }}/cpp-engine/build/quant_cli
+          QUANTFORGE_CPP_V1_REPOSITORY: ${{ github.workspace }}/cpp-engine
+          QUANTFORGE_CPP_V1_WORK_ROOT: ${{ runner.temp }}

@@ -6,7 +6,27 @@ policy versions remain independently governed.
 
 ## [Unreleased]
 
-No changes recorded.
+### Added
+
+- Add a backend-neutral durable case-store contract, crash-safe SQLite backend, forward-only
+  checksummed migrations, historical fixture, deterministic reconstruction, and export lineage.
+- Add a read-only adapter for the exact protected C++ v1.0.0 public synthetic fixture and canonical
+  engine-evidence bundles with optional fixture-only signing.
+- Add narrowly scoped store, migration, engine, evidence, reconstruction, and package CLI commands.
+- Add adversarial storage/bundle/process tests and Linux/macOS tagged-engine integration CI.
+
+### Security
+
+- Bind engine evidence to release, executable, invocation, configuration, inputs, complete outputs,
+  validators, methodology, case, workflow revision, constitution, amendments, and bundle lineage.
+- Reject injection, stale writers, schema tampering, path/symlink attacks, substitution, malformed or
+  non-finite output, process flooding, audit/graph drift, and post-finalization admission.
+
+### Limitations
+
+- The adapter is research-only, read-only, and limited to one public synthetic fixture. Live
+  providers, market data, brokers, orders, live trading, investment advice, and profitability claims
+  remain out of scope.
 
 ## [0.1.0] - 2026-07-15
 
