@@ -1,20 +1,40 @@
 # Evidence Model
 
-Every evidence object records stable and schema identities, case, related claims and experiment,
-locked constitution hash, adapter and safe relative artifact, source-artifact digest, optional
-normalized JSON pointer, content digest, timestamp, validation status and method, structured numeric
-facts and closed units, assumptions, limitations, relationship, and provenance.
+Every admitted evidence object records stable schema and case identities, related claims and
+experiment, locked constitution hash, adapter, safe artifact path, source byte digest, structured
+fact location, content digest, UTC timestamp, validation method, decimal facts, closed units,
+assumptions, limitations, relationship, and provenance. The ledger is append-only and rejects
+foreign bindings or replacement identifiers. The claim graph is typed, acyclic, ledger-checked, and
+requires each substantive final claim to reach validated evidence.
 
-The ledger accepts only new identifiers and exact case, experiment, constitution, and claim bindings.
-Objects are immutable; replacement is not supported. Numeric fact identifiers, values, and units
-must exactly equal the `content.facts` mapping covered by the content digest. Package-owned mock
-artifacts are checked for existence, containment, regular-file status, symlink traversal, size, and
-SHA-256 identity before admission. A reference can cite facts only by evidence and fact identifier.
-Review and Chair boundaries require referenced evidence to be validated and every fact identifier to
-exist. Unstructured reviewer narratives reject ordinary, exponent, and non-finite numerical forms.
+## Engine evidence bundle 1.0
 
-The claim graph has claim, evidence, and amendment nodes with `supports`, `contradicts`, `qualifies`,
-`derived_from`, and `amends` edges. Edge types have a closed source/target matrix; cycles and semantic
-duplicates are rejected; snapshots are identifier-sorted. Evidence node hashes, validation statuses,
-inventories, and relationship edges are checked against the ledger. Each substantive final claim
-must have a reachable validated evidence node.
+An engine bundle has two explicitly separated, canonical halves:
+
+- semantic: bundle/case/workflow/constitution/amendment identities; exact C++ repository, release,
+  tag, target, and executable digest; invocation-contract version and normalized arguments; config
+  digest; ordered input/output semantic inventories and schema versions; validator result digests;
+  numeric fact references, decimal values, units, methodology IDs; and previous bundle hash;
+- observations: execution/admission timestamps, ordered input/output byte digests and sizes, and
+  bounded process stdout/stderr digests.
+
+`semantic_hash` and `observation_hash` are calculated independently. `bundle_hash` binds both hashes.
+JSON output semantics exclude only the documented volatile keys `actual_commit`, `elapsed_seconds`,
+`generated_at`, `generated_at_utc`, `git_commit_hash`, `hostname`, `output_directory`,
+`portfolio_output_directory`, `run_timestamp_utc`, `source_tree_status`, `timestamp`, and `username`.
+Their original bytes remain in the observation inventory and therefore in the bundle hash. CSV
+values and all nonvolatile JSON values remain semantic.
+
+The optional signer interface authenticates the bundle hash. `HmacSha256TestSigner` is only a local
+fixture signer: hashing proves integrity relationships, not who created a bundle, and no production
+secret is embedded or generated.
+
+Admission verifies every referenced CSV location and requires its finite canonical decimal to equal
+the declared fact exactly. It checks complete file inventory, byte and semantic hashes, supported
+schemas/methodology, monotonic/bounded timestamps, current case and constitution state, workflow
+revision, amendment chain, engine/config/input identities, and bundle-chain parent. Only then is a
+normal `EvidenceObject` created; the numerical value is copied, not reinterpreted.
+
+Bundle IDs and hashes are immutable unique database keys. Bundle order and each previous hash are
+rechecked during reconstruction and independent package verification. Duplicate, reordered,
+truncated, cross-case, stale, substituted, or post-finalization evidence fails closed.

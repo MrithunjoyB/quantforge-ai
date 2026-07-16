@@ -13,8 +13,9 @@ pure policy compute the strongest defensible verdict.
 > Most financial AI searches for strategies to believe. QuantForge searches for reasons not to
 > believe them.
 
-This is the independently audited **Phase 1 governance foundation**, prepared as a local `v0.1.0`
-publication candidate. It is not an AI investment committee: roles may propose or explain, but
+This repository contains the independently audited **Phase 1 governance foundation** and the Phase
+2A durable local case store plus research-only C++ v1.0.0 evidence adapter. Version `v0.1.0` remains
+the immutable Phase 1 release; current Phase 2A work is unreleased. Roles may propose or explain, but
 code owns workflow state, evidence validity, human approval, and verdict strength.
 
 After the locked development environment is installed, the exact offline demo command is:
@@ -27,9 +28,11 @@ The command uses packaged synthetic fixtures, performs no network request, and e
 case, evidence, claim-graph, manifest, and audit artifacts. Those artifacts are validation evidence
 for governance behavior—not financial evidence and not evidence of profitability.
 
-Current limitations are deliberate: there is no live model provider, real OpenAI execution,
-market-data ingestion, real C++ engine integration, database, retrieval system, web UI, broker
-connectivity, order submission, live trading, production deployment, or investment advice.
+Phase 2A adds a schema-versioned SQLite backend, deterministic case packages, and one narrowly
+allow-listed, read-only adapter for the protected C++ `v1.0.0` public synthetic fixture. The C++
+release remains the numerical authority. There is no live OpenAI/provider integration, external
+market-data ingestion, retrieval system, web UI, broker connectivity, order submission, live
+trading, production deployment, investment advice, profitability claim, or guarantee.
 
 ## Install and verify offline behavior
 
@@ -96,6 +99,13 @@ remains human-directed, reviewed, and maintained by Mrithunjoy Basumatary. AI sy
 project authors or copyright holders.
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Storage model](docs/STORAGE_MODEL.md)
+- [Migration policy](docs/MIGRATION_POLICY.md)
+- [C++ engine integration contract](docs/ENGINE_INTEGRATION_CONTRACT.md)
+- [Evidence model](docs/EVIDENCE_MODEL.md)
+- [Deterministic semantics](docs/DETERMINISM.md)
+- [Operator runbook](docs/OPERATOR_RUNBOOK.md)
+- [Limitations](docs/LIMITATIONS.md)
 - [Governance](docs/GOVERNANCE.md)
 - [Security Model](docs/SECURITY_MODEL.md)
 - [Threat Model](docs/THREAT_MODEL.md)
