@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Protocol
+from typing import Any, Protocol
+
+from pydantic import Field, model_validator
 
 from quantforge.domain.models import (
     AdversarialReview,
@@ -14,10 +16,17 @@ from quantforge.domain.models import (
     ReproducibilityReview,
     ResearchClaim,
     RoleName,
+    Sha256,
     StatisticalReview,
+    StrictModel,
+    Timestamp,
     TribunalCase,
     VerdictEligibility,
 )
+from quantforge.serialization.canonical import canonical_sha256
+
+PROVIDER_CONTRACT_VERSION = "role-provider/1.0"
+VALIDATION_POLICY_VERSION = "pydantic-strict/1.0"
 
 
 class RoleAction(StrEnum):
@@ -53,17 +62,130 @@ class RoleAuthority:
             raise PermissionError(f"role {role.value} is not authorized for {action.value}")
 
 
+class ProviderSemanticProvenance(StrictModel):
+    provider_contract_version: str = Field(min_length=1, max_length=64)
+    provider_identity: str = Field(min_length=1, max_length=128)
+    model_snapshot: str = Field(min_length=1, max_length=128)
+    prompt_template_id: str = Field(min_length=1, max_length=128)
+    prompt_template_sha256: Sha256
+    structured_output_schema_id: str = Field(min_length=1, max_length=128)
+    structured_output_schema_sha256: Sha256
+    validation_policy_version: str = Field(min_length=1, max_length=64)
+    validated_response_sha256: Sha256
+
+
+class ProviderObservationalProvenance(StrictModel):
+    request_id: str = Field(min_length=1, max_length=200)
+    response_id: str = Field(min_length=1, max_length=200)
+    requested_at: Timestamp
+    responded_at: Timestamp
+    latency_ms: int = Field(ge=0, le=86_400_000)
+    usage: dict[str, int] = Field(default_factory=dict)
+    retry_count: int = Field(default=0, ge=0, le=100)
+    transport_metadata: dict[str, str | int | bool] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def timestamps_are_monotonic(self) -> ProviderObservationalProvenance:
+        if self.responded_at < self.requested_at:
+            raise ValueError("provider response precedes its request")
+        if any(value < 0 for value in self.usage.values()):
+            raise ValueError("provider usage observations cannot be negative")
+        return self
+
+
+class ProviderResult[OutputT: StrictModel](StrictModel):
+    semantic_provenance: ProviderSemanticProvenance
+    observational_provenance: ProviderObservationalProvenance
+    output: OutputT
+    semantic_hash: Sha256
+
+    @model_validator(mode="after")
+    def semantic_identity_is_exact(self) -> ProviderResult[OutputT]:
+        if self.semantic_provenance.validated_response_sha256 != canonical_sha256(self.output):
+            raise ValueError("provider validated-response digest mismatch")
+        expected = canonical_sha256(
+            {
+                "output": self.output,
+                "provenance": self.semantic_provenance,
+            }
+        )
+        if self.semantic_hash != expected:
+            raise ValueError("provider semantic identity mismatch")
+        return self
+
+
+def prompt_template_identity(action: RoleAction) -> tuple[str, str]:
+    template_id = f"quantforge_{action.value}_v1"
+    template = {
+        "action": action.value,
+        "contract": PROVIDER_CONTRACT_VERSION,
+        "instruction": "return one validated QuantForge domain object",
+    }
+    return template_id, canonical_sha256(template)
+
+
+def output_schema_identity(model_type: type[StrictModel]) -> tuple[str, str]:
+    schema_id = f"{model_type.__module__}.{model_type.__name__}/1.0"
+    return schema_id, canonical_sha256(model_type.model_json_schema(mode="validation"))
+
+
+def create_provider_result[ResultT: StrictModel](
+    *,
+    result_type: type[ProviderResult[ResultT]],
+    action: RoleAction,
+    output: ResultT,
+    provider_identity: str,
+    model_snapshot: str,
+    observations: ProviderObservationalProvenance,
+) -> ProviderResult[ResultT]:
+    prompt_id, prompt_hash = prompt_template_identity(action)
+    schema_id, schema_hash = output_schema_identity(type(output))
+    semantic = ProviderSemanticProvenance(
+        provider_contract_version=PROVIDER_CONTRACT_VERSION,
+        provider_identity=provider_identity,
+        model_snapshot=model_snapshot,
+        prompt_template_id=prompt_id,
+        prompt_template_sha256=prompt_hash,
+        structured_output_schema_id=schema_id,
+        structured_output_schema_sha256=schema_hash,
+        validation_policy_version=VALIDATION_POLICY_VERSION,
+        validated_response_sha256=canonical_sha256(output),
+    )
+    semantic_hash = canonical_sha256({"output": output, "provenance": semantic})
+    return result_type(
+        semantic_provenance=semantic,
+        observational_provenance=observations,
+        output=output,
+        semantic_hash=semantic_hash,
+    )
+
+
 class RoleProvider(Protocol):
-    """Future providers must validate external output before returning these contracts."""
+    """Providers return data and provenance; they receive no workflow or execution authority."""
 
-    def propose(self, claim: ResearchClaim) -> ExperimentProposal: ...
+    @property
+    def provider_identity(self) -> str: ...
 
-    def review_methodology(self, proposal: ExperimentProposal) -> MethodologyReview: ...
+    @property
+    def model_snapshot(self) -> str: ...
 
-    def review_statistics(self, case: TribunalCase) -> StatisticalReview: ...
+    def propose(self, claim: ResearchClaim) -> ProviderResult[ExperimentProposal]: ...
 
-    def review_adversarially(self, case: TribunalCase) -> AdversarialReview: ...
+    def review_methodology(
+        self, proposal: ExperimentProposal
+    ) -> ProviderResult[MethodologyReview]: ...
 
-    def review_reproducibility(self, case: TribunalCase) -> ReproducibilityReview: ...
+    def review_statistics(self, case: TribunalCase) -> ProviderResult[StatisticalReview]: ...
 
-    def explain(self, case: TribunalCase, eligibility: VerdictEligibility) -> ChairExplanation: ...
+    def review_adversarially(self, case: TribunalCase) -> ProviderResult[AdversarialReview]: ...
+
+    def review_reproducibility(
+        self, case: TribunalCase
+    ) -> ProviderResult[ReproducibilityReview]: ...
+
+    def explain(
+        self, case: TribunalCase, eligibility: VerdictEligibility
+    ) -> ProviderResult[ChairExplanation]: ...
+
+
+ProviderResultAny = ProviderResult[Any]

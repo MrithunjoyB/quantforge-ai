@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from quantforge.adapters.mock import MockEvidenceAdapter, MockRoleProvider, load_scenario
 from quantforge.audit import AuditLog
@@ -22,7 +23,8 @@ from quantforge.domain.models import (
 )
 from quantforge.evidence.graph import ClaimGraph, EdgeType, GraphEdge, GraphNode, NodeType
 from quantforge.evidence.ledger import EvidenceLedger, verify_source_artifact
-from quantforge.roles.contracts import RoleProvider
+from quantforge.roles.contracts import ProviderResult, RoleProvider
+from quantforge.roles.orchestrator import TribunalOrchestrator
 from quantforge.verdict.policy import VerdictInputs, VerdictPolicy
 from quantforge.workflow.machine import StateMachine
 
@@ -43,6 +45,7 @@ class DemoResult:
     evidence_ledger: EvidenceLedger
     claim_graph: ClaimGraph
     audit_log: AuditLog
+    provider_results: tuple[ProviderResult[Any], ...]
 
 
 def _validate_role_evidence(provider_output: object, ledger: EvidenceLedger) -> None:
@@ -85,7 +88,7 @@ def _build_graph(case: TribunalCase, ledger: EvidenceLedger) -> ClaimGraph:
     return graph
 
 
-def run_demo(scenario: str) -> DemoResult:
+def run_demo(scenario: str, *, role_provider: RoleProvider | None = None) -> DemoResult:
     fixture = load_scenario(scenario)
     clock = DeterministicClock()
     claim = ResearchClaim(
@@ -115,9 +118,10 @@ def run_demo(scenario: str) -> DemoResult:
         payload=claim,
     )
     machine = StateMachine(case, audit)
+    provider = role_provider or MockRoleProvider(fixture, timestamp_factory=clock.next)
+    orchestrator = TribunalOrchestrator(provider)
 
-    provider: RoleProvider = MockRoleProvider(fixture, timestamp=clock.next())
-    proposal = provider.propose(claim)
+    proposal = orchestrator.propose(claim)
     machine.advance(
         WorkflowState.RESEARCHER_PROTOCOL_PROPOSED,
         actor=RoleName.RESEARCHER,
@@ -127,8 +131,7 @@ def run_demo(scenario: str) -> DemoResult:
         updates={"proposal": proposal},
     )
 
-    provider = MockRoleProvider(fixture, timestamp=clock.next())
-    methodology = provider.review_methodology(proposal)
+    methodology = orchestrator.review_methodology(proposal)
     machine.advance(
         WorkflowState.METHODOLOGY_REVIEWED,
         actor=RoleName.METHODOLOGY_AUDITOR,
@@ -194,8 +197,7 @@ def run_demo(scenario: str) -> DemoResult:
         updates={"evidence_ids": tuple(item.evidence_id for item in evidence_items)},
     )
 
-    provider = MockRoleProvider(fixture, timestamp=clock.next())
-    statistical = provider.review_statistics(machine.case)
+    statistical = orchestrator.review_statistics(machine.case)
     _validate_role_evidence(statistical, ledger)
     machine.advance(
         WorkflowState.STATISTICS_REVIEWED,
@@ -206,8 +208,7 @@ def run_demo(scenario: str) -> DemoResult:
         updates={"statistical_review": statistical},
     )
 
-    provider = MockRoleProvider(fixture, timestamp=clock.next())
-    adversarial = provider.review_adversarially(machine.case)
+    adversarial = orchestrator.review_adversarially(machine.case)
     _validate_role_evidence(adversarial, ledger)
     machine.advance(
         WorkflowState.ADVERSARIAL_REVIEWED,
@@ -225,8 +226,7 @@ def run_demo(scenario: str) -> DemoResult:
         payload={"follow_up_required": False},
     )
 
-    provider = MockRoleProvider(fixture, timestamp=clock.next())
-    reproducibility = provider.review_reproducibility(machine.case)
+    reproducibility = orchestrator.review_reproducibility(machine.case)
     machine.skip_follow_up(
         actor=RoleName.REPRODUCIBILITY_REVIEWER,
         reason="No permitted follow up is required for the predefined fixture",
@@ -284,6 +284,7 @@ def run_demo(scenario: str) -> DemoResult:
             for finding in findings
         ),
         decisive_evidence=decisive,
+        provider_semantic_hashes=orchestrator.semantic_hashes,
     )
     eligibility = VerdictPolicy.compute(
         inputs,
@@ -299,8 +300,7 @@ def run_demo(scenario: str) -> DemoResult:
         updates={"verdict_eligibility": eligibility},
     )
 
-    provider = MockRoleProvider(fixture, timestamp=clock.next())
-    explanation = provider.explain(machine.case, eligibility)
+    explanation = orchestrator.explain(machine.case, eligibility)
     ledger.validate_references(explanation.decisive_evidence)
     ledger.validate_references(explanation.contradictory_evidence)
     machine.advance(
@@ -314,4 +314,10 @@ def run_demo(scenario: str) -> DemoResult:
 
     graph = _build_graph(machine.case, ledger)
     audit.verify(require_complete=True)
-    return DemoResult(machine.case, ledger, graph, audit)
+    return DemoResult(
+        machine.case,
+        ledger,
+        graph,
+        audit,
+        orchestrator.provider_results,
+    )

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+import quantforge.workflow as workflow_package
 from quantforge.audit import AuditLog
 from quantforge.domain.models import (
     FindingSeverity,
@@ -285,3 +286,10 @@ def test_review_summary_cross_field_invariants_are_enforced() -> None:
         adversarial.model_copy(update={"robustness_status": GateStatus.PASS})
     with pytest.raises(ValidationError, match="every reconstruction check"):
         reproducibility.model_copy(update={"status": ReproducibilityStatus.VERIFIED})
+
+
+def test_workflow_public_state_machine_is_lazy_and_exact() -> None:
+    assert workflow_package.StateMachine is StateMachine
+    with pytest.raises(AttributeError, match="has no attribute"):
+        missing = workflow_package.MissingAuthority
+        del missing
