@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from importlib import resources
@@ -52,7 +53,13 @@ from quantforge.domain.models import (
     VerdictEligibility,
 )
 from quantforge.roles.chair import create_chair_explanation
-from quantforge.roles.contracts import RoleAction, RoleAuthority
+from quantforge.roles.contracts import (
+    ProviderObservationalProvenance,
+    ProviderResult,
+    RoleAction,
+    RoleAuthority,
+    create_provider_result,
+)
 from quantforge.serialization.canonical import canonical_decimal, canonical_sha256
 
 
@@ -170,14 +177,27 @@ class MockEvidenceAdapter:
 class MockRoleProvider:
     """Predefined typed outputs exercising the same boundaries required of future LLM adapters."""
 
-    def __init__(self, fixture: ScenarioFixture, *, timestamp: datetime) -> None:
+    provider_identity = "quantforge_mock_provider"
+    model_snapshot = "typed-fixture-v1"
+
+    def __init__(
+        self,
+        fixture: ScenarioFixture,
+        *,
+        timestamp: datetime | None = None,
+        timestamp_factory: Callable[[], datetime] | None = None,
+    ) -> None:
+        if (timestamp is None) == (timestamp_factory is None):
+            raise ValueError("mock provider requires exactly one deterministic clock source")
         self._fixture = fixture
         self._timestamp = timestamp
+        self._timestamp_factory = timestamp_factory
 
-    def propose(self, claim: ResearchClaim) -> ExperimentProposal:
+    def propose(self, claim: ResearchClaim) -> ProviderResult[ExperimentProposal]:
         RoleAuthority.require(RoleName.RESEARCHER, RoleAction.PROPOSE_PROTOCOL)
         suffix = self._fixture.name
-        return ExperimentProposal(
+        timestamp = self._now()
+        output = ExperimentProposal(
             experiment_id=f"experiment_{suffix}",
             claim_id=claim.claim_id,
             primary_hypothesis=PrimaryHypothesis(
@@ -234,12 +254,19 @@ class MockRoleProvider:
                     ),
                 ),
             ),
-            proposed_at=self._timestamp,
+            proposed_at=timestamp,
+        )
+        return self._result(
+            RoleAction.PROPOSE_PROTOCOL,
+            output,
+            timestamp,
+            ProviderResult[ExperimentProposal],
         )
 
-    def review_methodology(self, proposal: ExperimentProposal) -> MethodologyReview:
+    def review_methodology(self, proposal: ExperimentProposal) -> ProviderResult[MethodologyReview]:
         RoleAuthority.require(RoleName.METHODOLOGY_AUDITOR, RoleAction.REVIEW_METHODOLOGY)
-        return MethodologyReview(
+        timestamp = self._now()
+        output = MethodologyReview(
             review_id=f"methodology_{self._fixture.name}",
             experiment_id=proposal.experiment_id,
             decision=self._fixture.methodology_decision,
@@ -250,18 +277,25 @@ class MockRoleProvider:
             multiple_testing_checked=True,
             evaluable=True,
             findings=(),
-            reviewed_at=self._timestamp,
+            reviewed_at=timestamp,
+        )
+        return self._result(
+            RoleAction.REVIEW_METHODOLOGY,
+            output,
+            timestamp,
+            ProviderResult[MethodologyReview],
         )
 
-    def review_statistics(self, case: TribunalCase) -> StatisticalReview:
+    def review_statistics(self, case: TribunalCase) -> ProviderResult[StatisticalReview]:
         RoleAuthority.require(RoleName.STATISTICAL_REVIEWER, RoleAction.REVIEW_STATISTICS)
+        timestamp = self._now()
         references = tuple(
             EvidenceReference(
                 evidence_id=item.evidence_id, numeric_fact_ids=(item.facts[0].fact_id,)
             )
             for item in self._fixture.evidence
         )
-        return StatisticalReview(
+        output = StatisticalReview(
             review_id=f"statistics_{self._fixture.name}",
             effect_direction=self._fixture.effect_direction,
             corrected_inference=self._fixture.corrected_inference,
@@ -278,11 +312,18 @@ class MockRoleProvider:
                 ),
             ),
             sample_limitations=("The synthetic sample cannot establish real market performance",),
-            reviewed_at=self._timestamp,
+            reviewed_at=timestamp,
+        )
+        return self._result(
+            RoleAction.REVIEW_STATISTICS,
+            output,
+            timestamp,
+            ProviderResult[StatisticalReview],
         )
 
-    def review_adversarially(self, case: TribunalCase) -> AdversarialReview:
+    def review_adversarially(self, case: TribunalCase) -> ProviderResult[AdversarialReview]:
         RoleAuthority.require(RoleName.ADVERSARIAL_REVIEWER, RoleAction.REQUEST_CHALLENGE)
+        timestamp = self._now()
         reference = EvidenceReference(
             evidence_id=self._fixture.evidence[-1].evidence_id,
             numeric_fact_ids=(self._fixture.evidence[-1].facts[0].fact_id,),
@@ -292,7 +333,7 @@ class MockRoleProvider:
             if self._fixture.robustness_status is GateStatus.FAIL
             else ChallengeStatus.PASSED
         )
-        return AdversarialReview(
+        output = AdversarialReview(
             review_id=f"adversarial_{self._fixture.name}",
             challenges=(
                 AdversarialChallenge(
@@ -309,13 +350,20 @@ class MockRoleProvider:
             regime_stability=self._fixture.regime_stability,
             concentration_risk=self._fixture.concentration_risk,
             findings=(),
-            reviewed_at=self._timestamp,
+            reviewed_at=timestamp,
+        )
+        return self._result(
+            RoleAction.REQUEST_CHALLENGE,
+            output,
+            timestamp,
+            ProviderResult[AdversarialReview],
         )
 
-    def review_reproducibility(self, case: TribunalCase) -> ReproducibilityReview:
+    def review_reproducibility(self, case: TribunalCase) -> ProviderResult[ReproducibilityReview]:
         RoleAuthority.require(RoleName.REPRODUCIBILITY_REVIEWER, RoleAction.REVIEW_REPRODUCIBILITY)
+        timestamp = self._now()
         verified = self._fixture.reproducibility_status is ReproducibilityStatus.VERIFIED
-        return ReproducibilityReview(
+        output = ReproducibilityReview(
             review_id=f"reproducibility_{self._fixture.name}",
             status=self._fixture.reproducibility_status,
             configuration_verified=verified,
@@ -326,12 +374,21 @@ class MockRoleProvider:
             evidence_complete=verified,
             reconstruction_status="verified" if verified else "failed",
             findings=(),
-            reviewed_at=self._timestamp,
+            reviewed_at=timestamp,
+        )
+        return self._result(
+            RoleAction.REVIEW_REPRODUCIBILITY,
+            output,
+            timestamp,
+            ProviderResult[ReproducibilityReview],
         )
 
-    def explain(self, case: TribunalCase, eligibility: VerdictEligibility) -> ChairExplanation:
+    def explain(
+        self, case: TribunalCase, eligibility: VerdictEligibility
+    ) -> ProviderResult[ChairExplanation]:
         RoleAuthority.require(RoleName.TRIBUNAL_CHAIR, RoleAction.EXPLAIN_VERDICT)
-        return create_chair_explanation(
+        timestamp = self._now()
+        output = create_chair_explanation(
             explanation_id=f"chair_{self._fixture.name}",
             eligibility=eligibility,
             requested_verdict=eligibility.verdict,
@@ -344,5 +401,45 @@ class MockRoleProvider:
             verdict_change_conditions=(
                 "The verdict may change only when validated evidence changes a policy gate",
             ),
-            created_at=self._timestamp,
+            created_at=timestamp,
+        )
+        return self._result(
+            RoleAction.EXPLAIN_VERDICT,
+            output,
+            timestamp,
+            ProviderResult[ChairExplanation],
+        )
+
+    def _now(self) -> datetime:
+        if self._timestamp_factory is not None:
+            return self._timestamp_factory()
+        if self._timestamp is None:
+            raise RuntimeError("mock provider has no deterministic timestamp")
+        return self._timestamp
+
+    def _result[ResultT: StrictModel](
+        self,
+        action: RoleAction,
+        output: ResultT,
+        timestamp: datetime,
+        result_type: type[ProviderResult[ResultT]],
+    ) -> ProviderResult[ResultT]:
+        suffix = f"{action.value}_{self._fixture.name}"
+        observations = ProviderObservationalProvenance(
+            request_id=f"request_{suffix}",
+            response_id=f"response_{suffix}",
+            requested_at=timestamp,
+            responded_at=timestamp,
+            latency_ms=0,
+            usage={"validated_objects": 1},
+            retry_count=0,
+            transport_metadata={"network_access": False, "transport": "in_process"},
+        )
+        return create_provider_result(
+            result_type=result_type,
+            action=action,
+            output=output,
+            provider_identity=self.provider_identity,
+            model_snapshot=self.model_snapshot,
+            observations=observations,
         )

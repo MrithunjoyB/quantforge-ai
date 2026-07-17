@@ -14,6 +14,7 @@ from quantforge.domain.models import (
     ReproducibilityStatus,
     ReviewDecision,
     Sensitivity,
+    Sha256,
     Stability,
     StrictModel,
     ValidationStatus,
@@ -41,6 +42,7 @@ class VerdictInputs(StrictModel):
     contradictory_evidence: tuple[EvidenceReference, ...] = ()
     unresolved_noncritical_limitations: bool
     decisive_evidence: tuple[EvidenceReference, ...] = Field(min_length=1)
+    provider_semantic_hashes: tuple[Sha256, ...] = ()
 
     @model_validator(mode="after")
     def evidence_sets_are_consistent(self) -> VerdictInputs:
@@ -52,6 +54,8 @@ class VerdictInputs(StrictModel):
             raise ValueError("contradictory evidence references must be unique")
         if not contradictory.issubset(decisive):
             raise ValueError("contradictory evidence must also be decisive evidence")
+        if len(self.provider_semantic_hashes) != len(set(self.provider_semantic_hashes)):
+            raise ValueError("provider semantic identities must be unique")
         return self
 
 
