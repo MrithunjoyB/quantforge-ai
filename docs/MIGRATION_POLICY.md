@@ -17,10 +17,12 @@ Migration rules are:
    validating the result without mutating the source file;
 6. never downgrade, silently repair, or discard unknown data.
 
-Phase 2A includes a checked schema-1 case fixture. Tests reconstruct its pre-migration case, perform
-dry-run and real schema-1-to-2 migration, and prove that case semantic hash, audit head, revision,
-ledger, and graph are unchanged. Adversarial tests cover partial history, future/downgrade values,
-modified schema SQL, and repeat migration.
+Phase 2A includes genuine frozen schema-1 and schema-2 databases created directly with the baseline
+runtime, not downgraded from candidate code. Metadata records each original database digest,
+migration checksum, schema fingerprint, origin commit, and expected semantic/audit/graph identities.
+Tests copy each fixture, perform dry-run and real migration to schema 3, and prove those identities
+are unchanged. Adversarial tests cover partial history, future values, modified schema SQL, and
+repeat migration.
 
 Future migrations must add a historical fixture and the same semantic-invariance proof before the
 latest schema constant changes. Destructive or lossy transformations require a separately governed

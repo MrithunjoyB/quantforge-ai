@@ -19,11 +19,12 @@ An engine bundle has two explicitly separated, canonical halves:
   bounded process stdout/stderr digests.
 
 `semantic_hash` and `observation_hash` are calculated independently. `bundle_hash` binds both hashes.
-JSON output semantics exclude only the documented volatile keys `actual_commit`, `elapsed_seconds`,
+Root-level JSON output semantics exclude only the documented volatile keys `actual_commit`, `elapsed_seconds`,
 `generated_at`, `generated_at_utc`, `git_commit_hash`, `hostname`, `output_directory`,
 `portfolio_output_directory`, `run_timestamp_utc`, `source_tree_status`, `timestamp`, and `username`.
-Their original bytes remain in the observation inventory and therefore in the bundle hash. CSV
-values and all nonvolatile JSON values remain semantic.
+Their original bytes remain in the observation inventory and therefore in the bundle hash. The
+exclusion is path-specific: a same-named nested field remains semantic. CSV values and all
+nonvolatile JSON values remain semantic.
 
 The optional signer interface authenticates the bundle hash. `HmacSha256TestSigner` is only a local
 fixture signer: hashing proves integrity relationships, not who created a bundle, and no production
@@ -34,6 +35,11 @@ the declared fact exactly. It checks complete file inventory, byte and semantic 
 schemas/methodology, monotonic/bounded timestamps, current case and constitution state, workflow
 revision, amendment chain, engine/config/input identities, and bundle-chain parent. Only then is a
 normal `EvidenceObject` created; the numerical value is copied, not reinterpreted.
+
+Bundle integrity does not prove that a process ran. Execution authenticity requires the separate,
+non-serializable, one-shot trusted receipt retained by the approved adapter and consumed by the
+same-process execute-and-admit operation. Serialized and self-declared validator results can be
+structurally verified but cannot enter the evidence ledger through standalone admission.
 
 Bundle IDs and hashes are immutable unique database keys. Bundle order and each previous hash are
 rechecked during reconstruction and independent package verification. Duplicate, reordered,

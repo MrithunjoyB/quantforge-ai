@@ -8,10 +8,10 @@ CFFCONVERT="${CFFCONVERT:-$(dirname "${PYTHON}")/cffconvert}"
 "${PYTHON}" -m ruff check src tests scripts
 "${PYTHON}" -m mypy src/quantforge scripts
 "${PYTHON}" -m pytest \
-  --cov=quantforge --cov-branch --cov-report=term-missing --cov-report=xml
-"${PYTHON}" -m coverage report \
-  --include='src/quantforge/audit/*,src/quantforge/domain/*,src/quantforge/evidence/*,src/quantforge/roles/*,src/quantforge/serialization/*,src/quantforge/verdict/*,src/quantforge/workflow/*' \
-  --fail-under=90
+  --cov=quantforge --cov-branch --cov-report=term-missing --cov-report=xml \
+  --cov-report=json:.critical-coverage.json
+"${PYTHON}" -m scripts.check_critical_coverage \
+  --coverage-json=.critical-coverage.json --minimum=90
 "${PYTHON}" -m pytest -m malicious
 "${PYTHON}" -m scripts.check_repository
 "${PYTHON}" -m scripts.check_secrets

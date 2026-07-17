@@ -105,3 +105,5 @@ for the exact candidate SHA. Release publication requires those remote results; 
 not establish them. Because the protected engine is deliberately not copied into the future GitHub
 repository, remote release-candidate CI revalidates the committed independent-audit boundary record;
 the local candidate must additionally pass a live read-only comparison against the sibling engine.
+The genuine production C++ adapter contract is Linux/macOS only. Windows CI establishes package,
+historical-fixture, and offline mock compatibility, not production adapter execution.

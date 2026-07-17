@@ -13,7 +13,8 @@ python3.12 -m venv .venv
 .venv/bin/quantforge store migrate research.sqlite3 --dry-run
 ```
 
-Initialize the bounded synthetic case, verify the release, and execute the approved fixture:
+Initialize the bounded synthetic case, verify the release, then execute and admit through the
+same-process trusted path:
 
 ```bash
 .venv/bin/quantforge case initialize-fixture \
@@ -23,34 +24,21 @@ Initialize the bounded synthetic case, verify the release, and execute the appro
   --executable /trusted/build/quant_cli \
   --expected-executable-sha256 <reviewed-64-character-sha256> \
   --work-root /trusted/empty-work-root
-.venv/bin/quantforge engine execute-fixture \
+.venv/bin/quantforge engine execute-and-admit-fixture \
   --repository /trusted/cpp-event-driven-backtester \
   --executable /trusted/build/quant_cli \
   --expected-executable-sha256 <reviewed-64-character-sha256> \
   --work-root /trusted/empty-work-root \
   --store research.sqlite3 --case-id case_provisional \
-  --bundle-output bundle.json
+  --evidence-id evidence_cpp_v1 --bundle-output bundle.json
 ```
 
-The execution response prints the isolated `artifact_root`. Preserve it until independent bundle
-verification and admission finish. Use the identical release arguments with:
+`execute-fixture` and `evidence verify` may be used separately for structural inspection, but the
+resulting serialized bundle cannot be admitted. `evidence admit` deliberately fails because a file
+cannot carry the in-process execution capability. Delayed and cross-process admission are
+unsupported. After trusted admission, continue with:
 
 ```bash
-.venv/bin/quantforge evidence verify \
-  --repository /trusted/cpp-event-driven-backtester \
-  --executable /trusted/build/quant_cli \
-  --expected-executable-sha256 <reviewed-64-character-sha256> \
-  --work-root /trusted/empty-work-root \
-  --store research.sqlite3 --case-id case_provisional \
-  --bundle-file bundle.json --artifact-root <printed-artifact-root>
-.venv/bin/quantforge evidence admit \
-  --repository /trusted/cpp-event-driven-backtester \
-  --executable /trusted/build/quant_cli \
-  --expected-executable-sha256 <reviewed-64-character-sha256> \
-  --work-root /trusted/empty-work-root \
-  --store research.sqlite3 --case-id case_provisional \
-  --bundle-file bundle.json --artifact-root <printed-artifact-root> \
-  --evidence-id evidence_cpp_v1
 .venv/bin/quantforge case reconstruct \
   --store research.sqlite3 --case-id case_provisional
 .venv/bin/quantforge case export \
@@ -68,3 +56,6 @@ weaker checks. Compare against a trusted backup/digest and investigate before cr
 
 This runbook does not authorize broker access, orders, live trading, investment advice, market-data
 ingestion, a live provider, or profitability claims.
+
+Run the production adapter only on Linux or macOS. Windows validation covers packaging, frozen
+fixtures, and mock/offline Python paths, not production C++ adapter execution.

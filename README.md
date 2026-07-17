@@ -74,10 +74,10 @@ replacement by an attacker who controls every local file remains a documented Ph
 scripts/quality.sh
 ```
 
-The quality gate checks formatting, Ruff, strict mypy, full branch-aware pytest coverage, the
-governance-critical coverage floor, malicious-input regressions, repository/document/version
-contracts, CFF validity, secret patterns, and source/wheel builds. Dependency vulnerability checks
-are enabled with `RUN_DEPENDENCY_AUDIT=1`.
+The quality gate checks formatting, Ruff, strict mypy, full branch-aware pytest coverage, the 90%
+combined governance-critical coverage floor (including storage and engine), malicious-input
+regressions, repository/document/version contracts, CFF validity, secret patterns, and source/wheel
+builds. Dependency vulnerability checks are enabled with `RUN_DEPENDENCY_AUDIT=1`.
 
 After committing an exact candidate, deterministic local release artifacts are produced with:
 
