@@ -19,6 +19,7 @@ from quantforge.domain.models import (
     TribunalCase,
     WorkflowState,
 )
+from quantforge.engine.trust import _TrustedAdmissionCapability
 from quantforge.evidence.bundle import EvidenceBundle
 from quantforge.evidence.graph import ClaimGraph, ClaimGraphSnapshot
 from quantforge.evidence.ledger import EvidenceLedger, EvidenceLedgerSnapshot
@@ -26,9 +27,11 @@ from quantforge.serialization.canonical import canonical_json, canonical_sha256
 from quantforge.serialization.safe_json import reject_symlink_components, safe_parse_json
 from quantforge.storage.base import CaseStore, DurableCase, ExportRecord, StoreInspection
 
-LATEST_SCHEMA_VERSION: Final = 2
+LATEST_SCHEMA_VERSION: Final = 3
 APPLICATION_ID: Final = 0x51464F52
 MAX_DATABASE_BYTES: Final = 64 * 1024 * 1024
+MAX_WAL_BYTES: Final = 64 * 1024 * 1024
+MAX_SHM_BYTES: Final = 16 * 1024 * 1024
 MAX_CASES: Final = 10_000
 MAX_EVENTS_PER_CASE: Final = 10_000
 MAX_CANONICAL_PAYLOAD_BYTES: Final = 2_000_000
@@ -234,6 +237,39 @@ MIGRATIONS: Final = (
             "CREATE INDEX exports_revision_idx ON exports(case_id, revision, export_id)",
         ),
     ),
+    Migration(
+        3,
+        "claim_graph_revision_anchor",
+        (
+            (
+                "ALTER TABLE cases ADD COLUMN graph_revision INTEGER "
+                "CHECK (graph_revision IS NULL OR graph_revision >= 1)"
+            ),
+            (
+                "ALTER TABLE cases ADD COLUMN graph_hash TEXT "
+                "CHECK (graph_hash IS NULL OR length(graph_hash) = 64)"
+            ),
+            """
+            UPDATE cases
+            SET graph_revision = (
+                SELECT max(claim_graphs.revision) FROM claim_graphs
+                WHERE claim_graphs.case_id = cases.case_id
+            )
+            WHERE EXISTS (
+                SELECT 1 FROM claim_graphs WHERE claim_graphs.case_id = cases.case_id
+            )
+            """,
+            """
+            UPDATE cases
+            SET graph_hash = (
+                SELECT claim_graphs.payload_hash FROM claim_graphs
+                WHERE claim_graphs.case_id = cases.case_id
+                ORDER BY claim_graphs.revision DESC LIMIT 1
+            )
+            WHERE graph_revision IS NOT NULL
+            """,
+        ),
+    ),
 )
 
 _EXPECTED_TABLES: Final = {
@@ -251,6 +287,21 @@ _EXPECTED_TABLES: Final = {
         "verdict_results",
     },
     2: {
+        "audit_events",
+        "bundle_artifacts",
+        "cases",
+        "claim_graphs",
+        "constitutions",
+        "evidence_bundles",
+        "evidence_records",
+        "export_artifacts",
+        "exports",
+        "migration_history",
+        "reviewer_outputs",
+        "store_metadata",
+        "verdict_results",
+    },
+    3: {
         "audit_events",
         "bundle_artifacts",
         "cases",
@@ -342,6 +393,7 @@ class SQLiteCaseStore(CaseStore):
         return self.inspect()
 
     def inspect(self) -> StoreInspection:
+        self._validate_sidecars()
         connection = self._open_raw(create=False)
         try:
             self._validate_schema(connection, allow_historical=True)
@@ -350,6 +402,7 @@ class SQLiteCaseStore(CaseStore):
             connection.close()
 
     def migrate(self, *, dry_run: bool = False) -> StoreInspection:
+        self._validate_sidecars()
         source = self._open_raw(create=False)
         try:
             current = self._validate_schema(source, allow_historical=True)
@@ -419,6 +472,7 @@ class SQLiteCaseStore(CaseStore):
         event: AuditEvent,
         *,
         expected_revision: int,
+        capability: _TrustedAdmissionCapability | None = None,
     ) -> int:
         if event.workflow_state is not WorkflowState.EXPERIMENT_EXECUTED:
             raise ValueError("engine evidence admission requires an experiment-executed event")
@@ -427,6 +481,9 @@ class SQLiteCaseStore(CaseStore):
             or bundle.semantic.workflow_revision != expected_revision
         ):
             raise ValueError("evidence bundle is bound to a foreign case revision")
+        if capability is None:
+            raise ValueError("engine evidence admission requires a trusted execution receipt")
+        capability.consume(bundle, event, expected_revision)
         with self._transaction() as connection:
             self._require_revision(connection, event.case_id, expected_revision)
             previous_row = connection.execute(
@@ -444,7 +501,11 @@ class SQLiteCaseStore(CaseStore):
             return self._append_event_transaction(connection, event, expected_revision)
 
     def save_claim_graph(self, case_id: str, graph: ClaimGraph, *, expected_revision: int) -> None:
-        durable = self.reconstruct(case_id, require_complete=False)
+        durable = self._reconstruct(
+            case_id,
+            require_complete=False,
+            allow_pending_final_graph=True,
+        )
         if durable.revision != expected_revision:
             raise RevisionConflictError(
                 f"revision conflict: expected {expected_revision}, found {durable.revision}"
@@ -455,6 +516,7 @@ class SQLiteCaseStore(CaseStore):
         graph.validate_final_claim_traceability()
         snapshot = graph.snapshot()
         payload = canonical_json(snapshot)
+        graph_hash = canonical_sha256(snapshot)
         with self._transaction() as connection:
             self._require_revision(connection, case_id, expected_revision)
             try:
@@ -463,8 +525,17 @@ class SQLiteCaseStore(CaseStore):
                     INSERT INTO claim_graphs(case_id, revision, payload_json, payload_hash)
                     VALUES (?, ?, ?, ?)
                     """,
-                    (case_id, expected_revision, payload, canonical_sha256(snapshot)),
+                    (case_id, expected_revision, payload, graph_hash),
                 )
+                changed = connection.execute(
+                    """
+                    UPDATE cases SET graph_revision = ?, graph_hash = ?
+                    WHERE case_id = ? AND revision = ?
+                    """,
+                    (expected_revision, graph_hash, case_id, expected_revision),
+                ).rowcount
+                if changed != 1:
+                    raise RevisionConflictError("case revision changed while anchoring graph")
             except sqlite3.IntegrityError as error:
                 raise ValueError("claim graph records are immutable") from error
 
@@ -577,10 +648,24 @@ class SQLiteCaseStore(CaseStore):
                 raise ValueError("duplicate or inconsistent export lineage rejected") from error
 
     def reconstruct(self, case_id: str, *, require_complete: bool = False) -> DurableCase:
+        return self._reconstruct(
+            case_id,
+            require_complete=require_complete,
+            allow_pending_final_graph=False,
+        )
+
+    def _reconstruct(
+        self,
+        case_id: str,
+        *,
+        require_complete: bool,
+        allow_pending_final_graph: bool,
+    ) -> DurableCase:
         with self._connection() as connection:
             row = connection.execute(
                 """
-                SELECT revision, semantic_hash, audit_head_hash
+                SELECT schema_version, revision, state, created_at_utc, updated_at_utc,
+                       semantic_hash, audit_head_hash, finalized, graph_revision, graph_hash
                 FROM cases WHERE case_id = ?
                 """,
                 (case_id,),
@@ -590,24 +675,59 @@ class SQLiteCaseStore(CaseStore):
             events = self._load_events(connection, case_id)
             audit = AuditLog(events)
             case = audit.replay_case(require_complete=require_complete)
-            if int(row[0]) != len(events):
+            expected_created = _utc_text(events[0].timestamp)
+            expected_updated = _utc_text(events[-1].timestamp)
+            if str(row[0]) != case.schema_version:
+                raise ValueError("durable case schema version mismatch")
+            if int(row[1]) != len(events):
                 raise ValueError("case revision does not match its event inventory")
-            if str(row[1]) != canonical_sha256(case):
+            if str(row[2]) != case.state.value:
+                raise ValueError("durable workflow state mismatch")
+            if str(row[3]) != expected_created or str(row[4]) != expected_updated:
+                raise ValueError("durable case timestamps do not match audited events")
+            if str(row[5]) != canonical_sha256(case):
                 raise ValueError("durable case semantic hash mismatch")
-            if str(row[2]) != events[-1].current_event_hash:
+            if str(row[6]) != events[-1].current_event_hash:
                 raise ValueError("durable case audit head mismatch")
+            if bool(row[7]) != (case.state is WorkflowState.CHAIR_EXPLANATION):
+                raise ValueError("durable case finalization state mismatch")
+            graph_revision = None if row[8] is None else int(row[8])
+            graph_hash = None if row[9] is None else str(row[9])
+            if (graph_revision is None) != (graph_hash is None):
+                raise ValueError("durable claim-graph anchor is partial")
+            if graph_revision is not None and graph_revision > len(events):
+                raise ValueError("durable claim-graph revision exceeds the case revision")
+            if (
+                case.state is WorkflowState.CHAIR_EXPLANATION
+                and graph_revision != len(events)
+                and not allow_pending_final_graph
+            ):
+                raise ValueError("finalized cases require a graph anchored at the final revision")
             ledger = self._reconstruct_ledger(case, events)
-            graph = self._load_graph(connection, case_id, ledger)
+            graph = self._load_graph(
+                connection,
+                case_id,
+                ledger,
+                expected_revision=graph_revision,
+                expected_hash=graph_hash,
+                required=(
+                    case.state is WorkflowState.CHAIR_EXPLANATION and not allow_pending_final_graph
+                ),
+            )
             self._verify_materializations(connection, case, events, ledger)
-            return DurableCase(
+            durable = DurableCase(
                 case=case,
                 audit_log=audit,
                 revision=len(events),
-                semantic_hash=str(row[1]),
-                audit_head_hash=str(row[2]),
+                semantic_hash=str(row[5]),
+                audit_head_hash=str(row[6]),
+                graph_revision=graph_revision,
+                graph_hash=graph_hash,
                 evidence_ledger=ledger,
                 claim_graph=graph,
             )
+        self._verify_bundle_chain(case_id)
+        return durable
 
     def verify(self) -> StoreInspection:
         with self._connection() as connection:
@@ -658,6 +778,7 @@ class SQLiteCaseStore(CaseStore):
 
     def _open_raw(self, *, create: bool) -> sqlite3.Connection:
         reject_symlink_components(self._path)
+        self._validate_sidecars()
         if not create:
             if self._path.is_symlink() or not self._path.is_file():
                 raise ValueError("case store must be a regular non-symlink file")
@@ -1092,21 +1213,40 @@ class SQLiteCaseStore(CaseStore):
         connection: sqlite3.Connection,
         case_id: str,
         ledger: EvidenceLedger | None,
+        *,
+        expected_revision: int | None,
+        expected_hash: str | None,
+        required: bool,
     ) -> ClaimGraph | None:
         rows = connection.execute(
             """
-            SELECT payload_json, payload_hash FROM claim_graphs
+            SELECT revision, payload_json, payload_hash FROM claim_graphs
             WHERE case_id = ? ORDER BY revision
             """,
             (case_id,),
         ).fetchall()
         if not rows:
+            if required or expected_revision is not None or expected_hash is not None:
+                raise ValueError("required durable claim graph is missing")
             return None
         if len(rows) != 1:
-            raise ValueError("case contains multiple immutable claim graphs")
-        snapshot = _decode_model(ClaimGraphSnapshot, str(rows[0][0]))
-        if canonical_sha256(snapshot) != str(rows[0][1]):
-            raise ValueError("claim graph payload hash mismatch")
+            raise ValueError("claim graph contains unanchored historical materializations")
+        if expected_revision is None or expected_hash is None:
+            raise ValueError("durable claim graph exists without a case anchor")
+        previous_revision = 0
+        snapshots: list[ClaimGraphSnapshot] = []
+        for row in rows:
+            revision = int(row[0])
+            if revision <= previous_revision:
+                raise ValueError("claim graph revisions are not append-only")
+            snapshot = _decode_model(ClaimGraphSnapshot, str(row[1]))
+            if canonical_sha256(snapshot) != str(row[2]):
+                raise ValueError("claim graph payload hash mismatch")
+            snapshots.append(snapshot)
+            previous_revision = revision
+        if previous_revision != expected_revision or str(rows[-1][2]) != expected_hash:
+            raise ValueError("claim graph does not match its case revision anchor")
+        snapshot = snapshots[-1]
         graph = ClaimGraph.from_snapshot(snapshot)
         if ledger is None:
             raise ValueError("claim graph exists without a durable evidence ledger")
@@ -1121,19 +1261,44 @@ class SQLiteCaseStore(CaseStore):
         events: tuple[AuditEvent, ...],
         ledger: EvidenceLedger | None,
     ) -> None:
+        constitution_rows = connection.execute(
+            """
+            SELECT case_id, constitution_id, revision, payload_json, payload_hash
+            FROM constitutions WHERE case_id = ? ORDER BY constitution_id
+            """,
+            (case.case_id,),
+        ).fetchall()
+        constitution_event = next(
+            (
+                event
+                for event in events
+                if event.workflow_state is WorkflowState.CONSTITUTION_LOCKED
+            ),
+            None,
+        )
+        expected_constitutions: list[tuple[str, str, int, str, str]] = []
         if case.constitution is not None:
-            row = connection.execute(
-                "SELECT payload_json, payload_hash FROM constitutions WHERE case_id = ?",
-                (case.case_id,),
-            ).fetchone()
-            if row is None:
-                raise ValueError("durable constitution materialization is missing")
-            constitution = _decode_model(ExperimentConstitution, str(row[0]))
-            if constitution != case.constitution or canonical_sha256(constitution) != str(row[1]):
-                raise ValueError("durable constitution materialization mismatch")
+            if constitution_event is None:
+                raise ValueError("case constitution lacks an authoritative event")
+            expected_constitutions.append(
+                (
+                    case.case_id,
+                    case.constitution.constitution_id,
+                    constitution_event.sequence,
+                    canonical_json(case.constitution),
+                    canonical_sha256(case.constitution),
+                )
+            )
+        actual_constitutions = [
+            (str(row[0]), str(row[1]), int(row[2]), str(row[3]), str(row[4]))
+            for row in constitution_rows
+        ]
+        if actual_constitutions != expected_constitutions:
+            raise ValueError("durable constitution materialization mismatch")
         evidence_rows = connection.execute(
             """
-            SELECT evidence_id, payload_json, payload_hash FROM evidence_records
+            SELECT case_id, evidence_id, bundle_id, revision, payload_json, payload_hash
+            FROM evidence_records
             WHERE case_id = ? ORDER BY evidence_id
             """,
             (case.case_id,),
@@ -1143,46 +1308,186 @@ class SQLiteCaseStore(CaseStore):
             if ledger is None
             else {item.evidence_id: item for item in ledger.snapshot().evidence}
         )
+        execution_event = next(
+            (
+                event
+                for event in events
+                if event.workflow_state is WorkflowState.EXPERIMENT_EXECUTED
+            ),
+            None,
+        )
         actual: dict[str, EvidenceObject] = {}
         for row in evidence_rows:
-            evidence = _decode_model(EvidenceObject, str(row[1]))
-            if canonical_sha256(evidence) != str(row[2]):
+            evidence = _decode_model(EvidenceObject, str(row[4]))
+            expected_bundle = evidence.provenance.get("bundle_id")
+            bundle_id = None if row[2] is None else str(row[2])
+            if (
+                str(row[0]) != case.case_id
+                or str(row[1]) != evidence.evidence_id
+                or int(row[3]) != (execution_event.sequence if execution_event else -1)
+                or str(row[4]) != canonical_json(evidence)
+                or canonical_sha256(evidence) != str(row[5])
+                or bundle_id != (expected_bundle if isinstance(expected_bundle, str) else None)
+            ):
                 raise ValueError("durable evidence materialization hash mismatch")
-            actual[str(row[0])] = evidence
+            actual[evidence.evidence_id] = evidence
         if actual != expected:
             raise ValueError("durable evidence materialization inventory mismatch")
+        bundle_rows = {
+            str(row[0]): (str(row[1]), str(row[2]))
+            for row in connection.execute(
+                """
+                SELECT bundle_id, bundle_hash, bundle_json FROM evidence_bundles
+                WHERE case_id = ?
+                """,
+                (case.case_id,),
+            )
+        }
+        for evidence in actual.values():
+            if evidence.source_adapter != "cpp_v1_adapter":
+                continue
+            provenance_bundle_id = evidence.provenance.get("bundle_id")
+            bundle_hash = evidence.provenance.get("bundle_hash")
+            if not isinstance(provenance_bundle_id, str) or provenance_bundle_id not in bundle_rows:
+                raise ValueError("engine evidence lacks its durable evidence bundle")
+            durable_hash, bundle_json = bundle_rows[provenance_bundle_id]
+            bundle = _decode_model(EvidenceBundle, bundle_json)
+            if (
+                bundle.bundle_hash != durable_hash
+                or bundle_hash != durable_hash
+                or evidence.content.get("bundle_hash") != durable_hash
+                or evidence.content.get("semantic_hash") != bundle.semantic_hash
+                or evidence.source_artifact
+                not in {item.path for item in bundle.semantic.output_artifacts}
+                or evidence.source_artifact_sha256
+                != {
+                    item.path: item.byte_sha256 for item in bundle.observations.output_artifacts
+                }.get(evidence.source_artifact)
+            ):
+                raise ValueError("engine evidence and durable bundle provenance mismatch")
+        expected_reviews: list[tuple[str, str, str, int, str, str]] = []
+        for event in events:
+            if event.workflow_state not in {
+                WorkflowState.METHODOLOGY_REVIEWED,
+                WorkflowState.STATISTICS_REVIEWED,
+                WorkflowState.ADVERSARIAL_REVIEWED,
+                WorkflowState.REPRODUCIBILITY_VERIFIED,
+                WorkflowState.CHAIR_EXPLANATION,
+            }:
+                continue
+            value = event.payload
+            if event.workflow_state is WorkflowState.REPRODUCIBILITY_VERIFIED:
+                if not isinstance(value, dict):
+                    raise ValueError("reproducibility event payload is not an object")
+                value = value.get("reproducibility_review")
+            if not isinstance(value, dict):
+                raise ValueError("review event payload is not an object")
+            identity_key = (
+                "explanation_id"
+                if event.workflow_state is WorkflowState.CHAIR_EXPLANATION
+                else "review_id"
+            )
+            review_id = value.get(identity_key)
+            if not isinstance(review_id, str):
+                raise ValueError("review event lacks its immutable identifier")
+            expected_reviews.append(
+                (
+                    case.case_id,
+                    review_id,
+                    event.actor.value,
+                    event.sequence,
+                    canonical_json(value),
+                    canonical_sha256(value),
+                )
+            )
+        review_rows = connection.execute(
+            """
+            SELECT case_id, review_id, reviewer_role, revision, payload_json, payload_hash
+            FROM reviewer_outputs WHERE case_id = ? ORDER BY revision, review_id
+            """,
+            (case.case_id,),
+        ).fetchall()
+        actual_reviews = [
+            (
+                str(row[0]),
+                str(row[1]),
+                str(row[2]),
+                int(row[3]),
+                str(row[4]),
+                str(row[5]),
+            )
+            for row in review_rows
+        ]
+        if actual_reviews != expected_reviews:
+            raise ValueError("durable reviewer materialization mismatch")
         verdict_events = [
             event
             for event in events
             if event.workflow_state is WorkflowState.VERDICT_ELIGIBILITY_COMPUTED
         ]
-        verdict_row = connection.execute(
-            "SELECT payload_json, payload_hash FROM verdict_results WHERE case_id = ?",
+        verdict_rows = connection.execute(
+            """
+            SELECT case_id, eligibility_id, revision, payload_json, payload_hash
+            FROM verdict_results WHERE case_id = ?
+            """,
             (case.case_id,),
-        ).fetchone()
-        if bool(verdict_events) != (verdict_row is not None):
-            raise ValueError("durable verdict materialization inventory mismatch")
-        if verdict_row is not None:
-            value = safe_parse_json(str(verdict_row[0]))
-            if canonical_sha256(value) != str(verdict_row[1]):
-                raise ValueError("durable verdict materialization hash mismatch")
+        ).fetchall()
+        expected_verdicts: list[tuple[str, str, int, str, str]] = []
+        if verdict_events:
+            if len(verdict_events) != 1 or not isinstance(verdict_events[0].payload, dict):
+                raise ValueError("authoritative verdict event inventory is invalid")
+            eligibility = verdict_events[0].payload.get("eligibility")
+            if not isinstance(eligibility, dict) or not isinstance(
+                eligibility.get("eligibility_id"), str
+            ):
+                raise ValueError("authoritative verdict event lacks eligibility")
+            eligibility_id = eligibility["eligibility_id"]
+            if not isinstance(eligibility_id, str):
+                raise ValueError("authoritative verdict identity is not text")
+            expected_verdicts.append(
+                (
+                    case.case_id,
+                    eligibility_id,
+                    verdict_events[0].sequence,
+                    canonical_json(eligibility),
+                    canonical_sha256(eligibility),
+                )
+            )
+        actual_verdicts = [
+            (str(row[0]), str(row[1]), int(row[2]), str(row[3]), str(row[4]))
+            for row in verdict_rows
+        ]
+        if actual_verdicts != expected_verdicts:
+            raise ValueError("durable verdict materialization mismatch")
 
     def _verify_bundle_chain(self, case_id: str) -> None:
         with self._connection() as connection:
             rows = connection.execute(
                 """
-                SELECT bundle_sequence, bundle_json, bundle_hash, previous_bundle_hash
+                SELECT case_id, bundle_sequence, bundle_id, workflow_revision, bundle_json,
+                       bundle_hash, previous_bundle_hash, observed_at_utc, signature_json
                 FROM evidence_bundles WHERE case_id = ? ORDER BY bundle_sequence
                 """,
                 (case_id,),
             ).fetchall()
             previous = "0" * 64
             for sequence, row in enumerate(rows, start=1):
-                if int(row[0]) != sequence or str(row[3]) != previous:
+                if int(row[1]) != sequence or str(row[6]) != previous:
                     raise ValueError("evidence-bundle chain is reordered or truncated")
-                bundle = _decode_model(EvidenceBundle, str(row[1]))
-                if bundle.bundle_hash != str(row[2]) or bundle.semantic.previous_bundle_hash != str(
-                    row[3]
+                bundle = _decode_model(EvidenceBundle, str(row[4]))
+                expected_signature = (
+                    canonical_json(bundle.signature) if bundle.signature is not None else None
+                )
+                actual_signature = None if row[8] is None else str(row[8])
+                if (
+                    str(row[0]) != case_id
+                    or str(row[2]) != bundle.semantic.bundle_id
+                    or int(row[3]) != bundle.semantic.workflow_revision
+                    or str(row[4]) != canonical_json(bundle)
+                    or bundle.bundle_hash != str(row[5])
+                    or bundle.semantic.previous_bundle_hash != str(row[6])
+                    or str(row[7]) != _utc_text(bundle.observations.admitted_at)
+                    or actual_signature != expected_signature
                 ):
                     raise ValueError("evidence-bundle payload hash mismatch")
                 artifact_rows = connection.execute(
@@ -1225,7 +1530,7 @@ class SQLiteCaseStore(CaseStore):
                 ]
                 if actual_rows != expected_rows:
                     raise ValueError("evidence-bundle artifact materialization mismatch")
-                previous = str(row[2])
+                previous = str(row[5])
 
     def _export_record(
         self,
@@ -1299,6 +1604,18 @@ class SQLiteCaseStore(CaseStore):
             raise ValueError("case-store database was replaced during operation")
         if self._path.stat().st_size > MAX_DATABASE_BYTES:
             raise ValueError("case-store database exceeds its resource limit")
+        self._validate_sidecars()
+
+    def _validate_sidecars(self) -> None:
+        for suffix, maximum in (("-wal", MAX_WAL_BYTES), ("-shm", MAX_SHM_BYTES)):
+            sidecar = Path(f"{self._path}{suffix}")
+            if not os.path.lexists(sidecar):
+                continue
+            reject_symlink_components(sidecar)
+            if sidecar.is_symlink() or not sidecar.is_file():
+                raise ValueError("case-store sidecar must be a regular non-symlink file")
+            if sidecar.stat().st_size > maximum:
+                raise ValueError("case-store sidecar exceeds its resource limit")
 
 
 __all__ = [

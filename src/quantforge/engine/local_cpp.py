@@ -13,13 +13,18 @@ import sys
 import tempfile
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass
+from contextlib import suppress
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
 from quantforge.engine.base import ApprovedFixtureIdentity, EngineAdapter, EngineRun
+from quantforge.engine.trust import (
+    TrustedEngineExecution,
+    _issue_trusted_execution_receipt,
+)
 from quantforge.evidence.bundle import (
     APPROVED_ARGUMENTS,
     CPP_PEELED_TARGET,
@@ -33,7 +38,7 @@ from quantforge.evidence.bundle import (
     ValidatorResult,
     artifact_semantic_sha256,
 )
-from quantforge.serialization.canonical import canonical_decimal
+from quantforge.serialization.canonical import canonical_decimal, canonical_sha256
 from quantforge.serialization.safe_json import reject_symlink_components
 
 APPROVED_CONFIG: Final = Path("configs/portfolio_equal_weight.json")
@@ -54,6 +59,8 @@ MAX_RUN_SECONDS: Final = 300
 MAX_VERSION_SECONDS: Final = 10
 MAX_OUTPUT_FILES: Final = 256
 MAX_CSV_ROWS: Final = 2_000_000
+MAX_REPOSITORY_FILES: Final = 100_000
+MAX_REPOSITORY_FILE_BYTES: Final = 128 * 1024 * 1024
 _EXPECTED_REMOTE_URLS: Final = {
     "https://github.com/MrithunjoyB/cpp-event-driven-backtester",
     "https://github.com/MrithunjoyB/cpp-event-driven-backtester.git",
@@ -78,6 +85,30 @@ class _ProcessResult:
     returncode: int
     stdout: bytes
     stderr: bytes
+
+
+@dataclass(frozen=True)
+class _StagedSnapshot:
+    files: tuple[tuple[str, str, str, int, str], ...]
+
+
+@dataclass(frozen=True)
+class _RepositorySnapshot:
+    repository_root: str
+    git_common_directory: str
+    remote: str
+    head: str
+    branch: str
+    tag_object: str
+    tag_target: str
+    tag_type: str
+    refs_sha256: str
+    status_sha256: str
+    tracked_diff_sha256: str
+    staged_diff_sha256: str
+    tracked_inventory_sha256: str
+    untracked_inventory_sha256: str
+    ignored_inventory_sha256: str
 
 
 class LocalCppV1Adapter(EngineAdapter):
@@ -128,8 +159,8 @@ class LocalCppV1Adapter(EngineAdapter):
         remote = self._git("config", "--get", "remote.origin.url").stdout.decode().strip()
         if remote not in _EXPECTED_REMOTE_URLS:
             raise ValueError("protected engine remote identity is not approved")
-        if self._git("status", "--porcelain=v1", "--untracked-files=no").stdout.strip():
-            raise ValueError("protected engine tracked working tree is not clean")
+        if self._git("status", "--porcelain=v1", "--untracked-files=all").stdout.strip():
+            raise ValueError("protected engine tracked and untracked working tree is not clean")
         tag_object = self._git("rev-parse", "refs/tags/v1.0.0").stdout.decode().strip()
         tag_target = self._git("rev-parse", "refs/tags/v1.0.0^{}").stdout.decode().strip()
         tag_type = self._git("cat-file", "-t", "refs/tags/v1.0.0").stdout.decode().strip()
@@ -153,10 +184,11 @@ class LocalCppV1Adapter(EngineAdapter):
         with tempfile.TemporaryDirectory(
             prefix="quantforge-identity-", dir=self._work_root
         ) as identity_directory:
+            identity_root = Path(identity_directory)
             version = self._run_bounded(
                 (str(self._executable), "version"),
-                cwd=self._repository,
-                environment=self._minimal_environment(Path(identity_directory)),
+                cwd=identity_root,
+                environment=self._minimal_environment(identity_root),
                 timeout_seconds=MAX_VERSION_SECONDS,
                 log_directory=None,
                 log_name="version",
@@ -171,45 +203,88 @@ class LocalCppV1Adapter(EngineAdapter):
         return identity
 
     def execute_approved_fixture(self) -> EngineRun:
+        run, _, _, _ = self._execute_fixture()
+        return run
+
+    def execute_trusted_fixture(
+        self,
+        *,
+        case_id: str,
+        workflow_revision: int,
+        constitution_id: str,
+        constitution_hash: str,
+        amendment_chain_hash: str,
+    ) -> TrustedEngineExecution:
+        run, configuration_semantic, repository_snapshot_hash, validator_source_hash = (
+            self._execute_fixture()
+        )
+        receipt = _issue_trusted_execution_receipt(
+            run,
+            case_id=case_id,
+            workflow_revision=workflow_revision,
+            constitution_id=constitution_id,
+            constitution_hash=constitution_hash,
+            amendment_chain_hash=amendment_chain_hash,
+            configuration_semantic_sha256=configuration_semantic,
+            repository_snapshot_sha256=repository_snapshot_hash,
+            validator_source_sha256=validator_source_hash,
+        )
+        return TrustedEngineExecution(run=run, receipt=receipt)
+
+    def _execute_fixture(self) -> tuple[EngineRun, str, str, str]:
+        repository_before = self._repository_snapshot()
         identity = self.verify_release_identity()
         self._validate_work_root()
+        if self._repository_snapshot() != repository_before:
+            raise ValueError("protected engine repository changed during identity verification")
         run_root = Path(tempfile.mkdtemp(prefix="quantforge-engine-", dir=self._work_root))
         logs = run_root / ".adapter-logs"
         logs.mkdir(mode=0o700)
         environment = self._minimal_environment(run_root)
         input_semantics, input_observations = self._stage_inputs(run_root)
-        configuration_sha256 = _sha256_file(run_root / APPROVED_CONFIG)
+        staged_before = self._staged_snapshot(run_root)
+        self._make_staged_inputs_read_only(run_root)
+        configuration = run_root / APPROVED_CONFIG
+        configuration_sha256 = _sha256_file(configuration)
+        configuration_semantic_sha256 = artifact_semantic_sha256(configuration)
+        validator_source_sha256 = _sha256_file(run_root / APPROVED_VALIDATOR)
         started_at = datetime.now(UTC)
         results: list[_ProcessResult] = []
-        results.append(
-            self._run_engine(
-                ("validate-config", "--config", APPROVED_CONFIG.as_posix()),
-                run_root,
-                environment,
-                logs,
-                "validate-config",
-            )
+        self._run_and_verify_engine(
+            results,
+            ("validate-config", "--config", APPROVED_CONFIG.as_posix()),
+            run_root,
+            environment,
+            logs,
+            "validate-config",
+            staged_before,
         )
-        results.append(
-            self._run_engine(
-                ("print-resolved-config", "--config", APPROVED_CONFIG.as_posix()),
-                run_root,
-                environment,
-                logs,
-                "print-resolved-config",
-            )
+        self._run_and_verify_engine(
+            results,
+            ("print-resolved-config", "--config", APPROVED_CONFIG.as_posix()),
+            run_root,
+            environment,
+            logs,
+            "print-resolved-config",
+            staged_before,
         )
-        results.append(
-            self._run_engine(
-                ("run", "--config", APPROVED_CONFIG.as_posix(), "--dry-run"),
-                run_root,
-                environment,
-                logs,
-                "dry-run",
-            )
+        self._run_and_verify_engine(
+            results,
+            ("run", "--config", APPROVED_CONFIG.as_posix(), "--dry-run"),
+            run_root,
+            environment,
+            logs,
+            "dry-run",
+            staged_before,
         )
-        results.append(
-            self._run_engine(APPROVED_ARGUMENTS, run_root, environment, logs, "experiment")
+        self._run_and_verify_engine(
+            results,
+            APPROVED_ARGUMENTS,
+            run_root,
+            environment,
+            logs,
+            "experiment",
+            staged_before,
         )
         validator = self._run_bounded(
             (str(Path(sys.executable).resolve()), APPROVED_VALIDATOR.as_posix()),
@@ -220,13 +295,17 @@ class LocalCppV1Adapter(EngineAdapter):
             log_name="validate-results",
         )
         results.append(validator)
+        self._verify_post_child_identity(run_root, staged_before)
         completed_at = datetime.now(UTC)
         self._verify_run_boundary(run_root)
+        repository_after = self._repository_snapshot()
+        if repository_after != repository_before:
+            raise ValueError("protected engine repository boundary changed during execution")
         output_root = run_root / "results"
         output_semantics, output_observations = self._inventory_outputs(output_root)
         fact = self._extract_numeric_fact(output_root)
         validator_digest = hashlib.sha256(validator.stdout + b"\0" + validator.stderr).hexdigest()
-        return EngineRun(
+        run = EngineRun(
             run_root=run_root,
             output_root=output_root,
             engine=identity,
@@ -248,6 +327,12 @@ class LocalCppV1Adapter(EngineAdapter):
             execution_completed_at=completed_at,
             stdout_sha256=_combined_digest(result.stdout for result in results),
             stderr_sha256=_combined_digest(result.stderr for result in results),
+        )
+        return (
+            run,
+            configuration_semantic_sha256,
+            canonical_sha256(asdict(repository_before)),
+            validator_source_sha256,
         )
 
     def approved_fixture_identity(self) -> ApprovedFixtureIdentity:
@@ -297,6 +382,160 @@ class LocalCppV1Adapter(EngineAdapter):
             log_directory=logs,
             log_name=log_name,
         )
+
+    def _run_and_verify_engine(
+        self,
+        results: list[_ProcessResult],
+        arguments: tuple[str, ...],
+        run_root: Path,
+        environment: dict[str, str],
+        logs: Path,
+        log_name: str,
+        staged_before: _StagedSnapshot,
+    ) -> None:
+        results.append(self._run_engine(arguments, run_root, environment, logs, log_name))
+        self._verify_post_child_identity(run_root, staged_before)
+
+    def _verify_post_child_identity(self, run_root: Path, staged_before: _StagedSnapshot) -> None:
+        if self._staged_snapshot(run_root) != staged_before:
+            raise ValueError("staged configuration, input, or validator identity changed")
+        self._validate_executable()
+        validator = self._repository / APPROVED_VALIDATOR
+        reject_symlink_components(validator)
+        if validator.is_symlink() or not validator.is_file():
+            raise ValueError("approved validator source identity changed")
+        staged_validator = run_root / APPROVED_VALIDATOR
+        if _sha256_file(validator) != _sha256_file(staged_validator):
+            raise ValueError("approved validator source identity changed")
+
+    def _staged_snapshot(self, run_root: Path) -> _StagedSnapshot:
+        expected = {APPROVED_CONFIG, *APPROVED_INPUTS, APPROVED_VALIDATOR}
+        allowed_directories = {
+            parent for relative in expected for parent in relative.parents if parent != Path(".")
+        }
+        actual_files: set[Path] = set()
+        for root_name in ("configs", "data", "scripts"):
+            root = run_root / root_name
+            reject_symlink_components(root)
+            if root.is_symlink() or not root.is_dir():
+                raise ValueError("staged input root is missing or has an unexpected file type")
+            for candidate in sorted(root.rglob("*")):
+                relative = candidate.relative_to(run_root)
+                if candidate.is_symlink():
+                    raise ValueError("staged input inventory contains a symlink")
+                if candidate.is_dir():
+                    if relative not in allowed_directories:
+                        raise ValueError("staged input inventory contains an extra directory")
+                    continue
+                if not candidate.is_file():
+                    raise ValueError("staged input inventory contains an unexpected file type")
+                actual_files.add(relative)
+        if actual_files != expected:
+            missing = sorted(path.as_posix() for path in expected.difference(actual_files))
+            extra = sorted(path.as_posix() for path in actual_files.difference(expected))
+            raise ValueError(f"staged input inventory mismatch: missing={missing}, extra={extra}")
+        files: list[tuple[str, str, str, int, str]] = []
+        for relative in sorted(expected):
+            path = run_root / relative
+            schema = (
+                "json-v1"
+                if path.suffix.casefold() == ".json"
+                else "csv-v1"
+                if path.suffix.casefold() == ".csv"
+                else "raw-v1"
+            )
+            byte_hash = _sha256_file(path)
+            semantic_hash = artifact_semantic_sha256(path) if schema != "raw-v1" else byte_hash
+            files.append(
+                (relative.as_posix(), byte_hash, semantic_hash, path.stat().st_size, schema)
+            )
+        return _StagedSnapshot(tuple(files))
+
+    @staticmethod
+    def _make_staged_inputs_read_only(run_root: Path) -> None:
+        for relative in (APPROVED_CONFIG, *APPROVED_INPUTS, APPROVED_VALIDATOR):
+            with suppress(OSError):
+                os.chmod(run_root / relative, 0o400)
+        directories = sorted(
+            {
+                (run_root / relative).parent
+                for relative in (APPROVED_CONFIG, *APPROVED_INPUTS, APPROVED_VALIDATOR)
+            },
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+        for directory in directories:
+            with suppress(OSError):
+                os.chmod(directory, 0o500)
+
+    def _repository_snapshot(self) -> _RepositorySnapshot:
+        repository_root = self._git("rev-parse", "--show-toplevel").stdout.decode().strip()
+        git_common = self._git("rev-parse", "--git-common-dir").stdout.decode().strip()
+        remote = self._git("config", "--get", "remote.origin.url").stdout.decode().strip()
+        head = self._git("rev-parse", "HEAD").stdout.decode().strip()
+        branch = self._git("branch", "--show-current").stdout.decode().strip()
+        tag_object = self._git("rev-parse", "refs/tags/v1.0.0").stdout.decode().strip()
+        tag_target = self._git("rev-parse", "refs/tags/v1.0.0^{}").stdout.decode().strip()
+        tag_type = self._git("cat-file", "-t", "refs/tags/v1.0.0").stdout.decode().strip()
+        refs = self._git("for-each-ref", "--format=%(refname)%00%(objectname)%00").stdout
+        status = self._git("status", "--porcelain=v1", "--untracked-files=all").stdout
+        tracked_diff = self._git("diff", "--no-ext-diff", "--binary").stdout
+        staged_diff = self._git("diff", "--cached", "--no-ext-diff", "--binary").stdout
+        return _RepositorySnapshot(
+            repository_root=repository_root,
+            git_common_directory=git_common,
+            remote=remote,
+            head=head,
+            branch=branch,
+            tag_object=tag_object,
+            tag_target=tag_target,
+            tag_type=tag_type,
+            refs_sha256=hashlib.sha256(refs).hexdigest(),
+            status_sha256=hashlib.sha256(status).hexdigest(),
+            tracked_diff_sha256=hashlib.sha256(tracked_diff).hexdigest(),
+            staged_diff_sha256=hashlib.sha256(staged_diff).hexdigest(),
+            tracked_inventory_sha256=self._repository_inventory_sha256("ls-files", "-z"),
+            untracked_inventory_sha256=self._repository_inventory_sha256(
+                "ls-files", "--others", "--exclude-standard", "-z"
+            ),
+            ignored_inventory_sha256=self._repository_inventory_sha256(
+                "ls-files", "--others", "--ignored", "--exclude-standard", "-z"
+            ),
+        )
+
+    def _repository_inventory_sha256(self, *arguments: str) -> str:
+        raw = self._git(*arguments).stdout
+        if raw and not raw.endswith(b"\0"):
+            raise ValueError("protected repository path inventory is malformed")
+        raw_paths = raw.removesuffix(b"\0").split(b"\0") if raw else []
+        if len(raw_paths) > MAX_REPOSITORY_FILES:
+            raise ValueError("protected repository file inventory exceeds its limit")
+        digest = hashlib.sha256()
+        repository_root = self._repository.resolve(strict=True)
+        for raw_path in sorted(raw_paths):
+            relative_text = os.fsdecode(raw_path)
+            relative = Path(relative_text)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("protected repository inventory contains an unsafe path")
+            path = self._repository / relative
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ValueError("protected repository inventory contains a forbidden symlink")
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError("protected repository inventory contains a forbidden file type")
+            if metadata.st_size > MAX_REPOSITORY_FILE_BYTES:
+                raise ValueError("protected repository file exceeds its snapshot limit")
+            try:
+                path.resolve(strict=True).relative_to(repository_root)
+            except ValueError as error:
+                raise ValueError("protected repository file escapes its boundary") from error
+            digest.update(raw_path)
+            digest.update(b"\0")
+            digest.update(str(metadata.st_size).encode("ascii"))
+            digest.update(b"\0")
+            digest.update(_sha256_file(path).encode("ascii"))
+            digest.update(b"\0")
+        return digest.hexdigest()
 
     def _git(
         self,
@@ -451,6 +690,8 @@ class LocalCppV1Adapter(EngineAdapter):
         for candidate in sorted(run_root.rglob("*")):
             if candidate.is_symlink():
                 raise ValueError("engine run created or traversed a symlink")
+            if not candidate.is_dir() and not candidate.is_file():
+                raise ValueError("engine run created an unexpected filesystem entry")
             relative = candidate.relative_to(run_root)
             if relative.parts and relative.parts[0] not in allowed_top_level:
                 raise ValueError("engine run wrote outside the approved output boundary")

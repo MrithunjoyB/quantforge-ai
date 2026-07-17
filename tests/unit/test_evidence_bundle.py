@@ -144,6 +144,25 @@ def _bundle_fixture(
     return bundle, context, root
 
 
+def test_json_volatile_exclusions_are_root_path_specific(tmp_path: Path) -> None:
+    artifact = tmp_path / "metadata.json"
+    artifact.write_text(
+        '{"run_timestamp_utc":"first","nested":{"timestamp":"semantic-first"}}\n',
+        encoding="utf-8",
+    )
+    first = artifact_semantic_sha256(artifact)
+    artifact.write_text(
+        '{"run_timestamp_utc":"second","nested":{"timestamp":"semantic-first"}}\n',
+        encoding="utf-8",
+    )
+    assert artifact_semantic_sha256(artifact) == first
+    artifact.write_text(
+        '{"run_timestamp_utc":"second","nested":{"timestamp":"semantic-second"}}\n',
+        encoding="utf-8",
+    )
+    assert artifact_semantic_sha256(artifact) != first
+
+
 def test_bundle_verifies_and_converts_without_reinterpreting_numeric_fact(
     tmp_path: Path,
 ) -> None:

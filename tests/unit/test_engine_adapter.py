@@ -3,15 +3,21 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
+import subprocess
 import sys
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from quantforge.audit import AuditLog
 from quantforge.cli import main as cli_module
 from quantforge.cli.main import main
+from quantforge.domain.models import RoleName, WorkflowState
+from quantforge.engine.base import EngineAdapter
 from quantforge.engine.local_cpp import (
     APPROVED_CONFIG,
     APPROVED_INPUTS,
@@ -19,20 +25,31 @@ from quantforge.engine.local_cpp import (
     LocalCppV1Adapter,
     _ProcessResult,
     _read_engine_json,
+    _RepositorySnapshot,
     _validate_output_artifact,
 )
+from quantforge.engine.trust import TrustedExecutionReceipt
 from quantforge.evidence.bundle import (
     EngineIdentity,
     EvidenceAdmissionContext,
     HmacSha256TestSigner,
+    ValidatorResult,
     amendment_chain_hash,
+    evidence_from_bundle,
+    verify_evidence_bundle,
 )
+from quantforge.evidence.ledger import EvidenceLedger
+from quantforge.serialization.canonical import canonical_sha256
 from quantforge.storage import (
     SQLiteCaseStore,
     admit_engine_evidence,
+    execute_and_admit_engine_evidence,
+    export_durable_case,
     persist_audited_case,
+    verify_case_package,
 )
 from quantforge.workflow.demo import run_demo
+from quantforge.workflow.machine import StateMachine
 
 
 class ReleaseFixtureAdapter(LocalCppV1Adapter):
@@ -65,9 +82,105 @@ class FixtureAdapter(ReleaseFixtureAdapter):
         self._validate_executable()
         return EngineIdentity(executable_sha256=_sha256(self._executable))
 
+    def _repository_snapshot(self) -> _RepositorySnapshot:
+        inventory: list[tuple[str, str, int]] = []
+        for candidate in sorted(self._repository.rglob("*")):
+            relative = candidate.relative_to(self._repository)
+            if relative.parts[0] == ".git":
+                continue
+            if candidate.is_symlink():
+                raise ValueError("protected repository inventory contains a forbidden symlink")
+            if candidate.is_file():
+                inventory.append(
+                    (relative.as_posix(), _sha256(candidate), candidate.stat().st_size)
+                )
+            elif not candidate.is_dir():
+                raise ValueError("protected repository inventory contains a forbidden file type")
+        digest = canonical_sha256(inventory)
+        return _RepositorySnapshot(
+            repository_root=str(self._repository),
+            git_common_directory=str(self._repository / ".git"),
+            remote="fixture",
+            head="fixture",
+            branch="fixture",
+            tag_object="fixture",
+            tag_target="fixture",
+            tag_type="fixture",
+            refs_sha256=digest,
+            status_sha256=digest,
+            tracked_diff_sha256=digest,
+            staged_diff_sha256=digest,
+            tracked_inventory_sha256=digest,
+            untracked_inventory_sha256=digest,
+            ignored_inventory_sha256=digest,
+        )
+
+
+class HostileFixtureAdapter(FixtureAdapter):
+    def __init__(
+        self,
+        *,
+        repository: Path,
+        executable: Path,
+        expected_executable_sha256: str,
+        work_root: Path,
+        hostile_action: str,
+    ) -> None:
+        super().__init__(
+            repository=repository,
+            executable=executable,
+            expected_executable_sha256=expected_executable_sha256,
+            work_root=work_root,
+        )
+        self._hostile_action = hostile_action
+
+    def _run_engine(
+        self,
+        arguments: tuple[str, ...],
+        run_root: Path,
+        environment: dict[str, str],
+        logs: Path,
+        log_name: str,
+    ) -> _ProcessResult:
+        hostile_environment = {
+            **environment,
+            "QF_HOSTILE": self._hostile_action,
+            "QF_REPOSITORY": str(self._repository),
+        }
+        return super()._run_engine(
+            arguments,
+            run_root,
+            hostile_environment,
+            logs,
+            log_name,
+        )
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_engine_adapter_abstract_defaults_fail_closed() -> None:
+    receiver = cast(EngineAdapter, None)
+    getter = cast(Any, EngineAdapter.allowed_commands).fget
+    assert getter is not None
+    calls = (
+        lambda: getter(receiver),
+        lambda: EngineAdapter.verify_release_identity(receiver),
+        lambda: EngineAdapter.approved_fixture_identity(receiver),
+        lambda: EngineAdapter.execute_approved_fixture(receiver),
+        lambda: EngineAdapter.execute_trusted_fixture(
+            receiver,
+            case_id="case",
+            workflow_revision=1,
+            constitution_id="constitution",
+            constitution_hash="1" * 64,
+            amendment_chain_hash="2" * 64,
+        ),
+    )
+    for call in calls:
+        with pytest.raises(NotImplementedError):
+            call()
 
 
 def _fake_environment(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -129,6 +242,37 @@ elif command == "run" and "--dry-run" not in sys.argv:
     )
     print("experiment complete")
 else:
+    hostile = os.environ.get("QF_HOSTILE")
+    if hostile and command == "validate-config":
+        targets = {{
+            "configuration": pathlib.Path("configs/portfolio_equal_weight.json"),
+            "input_csv": pathlib.Path("data/synthetic/SYN_BENCH.csv"),
+            "input_json": pathlib.Path("data/synthetic/metadata.json"),
+            "validator": pathlib.Path("scripts/validate_results.py"),
+        }}
+        if hostile in targets:
+            target = targets[hostile]
+            target.chmod(0o600)
+            target.write_text(target.read_text(encoding="utf-8") + " ", encoding="utf-8")
+        elif hostile == "executable":
+            own = pathlib.Path(__file__)
+            own.write_text(own.read_text(encoding="utf-8") + "\\n# changed\\n", encoding="utf-8")
+        elif hostile == "repository_file":
+            repository_file = (
+                pathlib.Path(os.environ["QF_REPOSITORY"])
+                / "data/synthetic/SYN_EQ_A.csv"
+            )
+            repository_file.write_text(
+                repository_file.read_text(encoding="utf-8") + "2026-01-02,2\\n",
+                encoding="utf-8",
+            )
+        elif hostile == "symlink_target":
+            target = pathlib.Path("hostile-target.json")
+            target.write_text('{{"hostile":true}}\\n', encoding="utf-8")
+            link = pathlib.Path("configs/portfolio_equal_weight.json")
+            link.parent.chmod(0o700)
+            link.unlink()
+            link.symlink_to(target.resolve())
     print(json.dumps({{"command": command, "valid": True}}))
 """,
         encoding="utf-8",
@@ -149,6 +293,17 @@ def _adapter(tmp_path: Path) -> FixtureAdapter:
     )
 
 
+def _hostile_adapter(tmp_path: Path, hostile_action: str) -> HostileFixtureAdapter:
+    repository, executable, work_root = _fake_environment(tmp_path)
+    return HostileFixtureAdapter(
+        repository=repository,
+        executable=executable,
+        expected_executable_sha256=_sha256(executable),
+        work_root=work_root,
+        hostile_action=hostile_action,
+    )
+
+
 def test_fixture_execution_uses_only_allowlisted_argv_and_isolated_outputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -163,10 +318,90 @@ def test_fixture_execution_uses_only_allowlisted_argv_and_isolated_outputs(
         "fixture/run_metadata.json",
     ]
     assert run.numeric_facts[0].value.is_finite()
-    assert run.numeric_facts[0].value.as_tuple().exponent < 0
+    exponent = run.numeric_facts[0].value.as_tuple().exponent
+    assert isinstance(exponent, int) and exponent < 0
     assert run.validators[0].status == "passed"
     assert all(command[0] in {"python", "quant_cli"} for command in adapter.allowed_commands)
     assert not (adapter._repository / "results").exists()
+
+
+@pytest.mark.parametrize(
+    "hostile_action",
+    [
+        "configuration",
+        "input_csv",
+        "input_json",
+        "validator",
+        "executable",
+        "repository_file",
+        "symlink_target",
+    ],
+)
+@pytest.mark.malicious
+def test_post_child_identity_rejects_hostile_mutation(tmp_path: Path, hostile_action: str) -> None:
+    adapter = _hostile_adapter(tmp_path / hostile_action, hostile_action)
+    with pytest.raises(ValueError, match=r"changed|identity|inventory|symlink|boundary"):
+        adapter.execute_approved_fixture()
+
+
+@pytest.mark.malicious
+def test_trusted_receipt_is_code_owned_case_bound_and_one_shot(tmp_path: Path) -> None:
+    adapter = _adapter(tmp_path)
+    execution = adapter.execute_trusted_fixture(
+        case_id="case_receipt",
+        workflow_revision=5,
+        constitution_id="constitution_receipt",
+        constitution_hash="1" * 64,
+        amendment_chain_hash="2" * 64,
+    )
+    with pytest.raises(TypeError, match="approved adapter"):
+        TrustedExecutionReceipt(execution.receipt.record)
+    run = execution.run
+    admitted_at = run.execution_completed_at + timedelta(seconds=1)
+    foreign = run.evidence_bundle(
+        bundle_id="bundle_foreign",
+        case_id="case_foreign",
+        workflow_revision=5,
+        constitution_id="constitution_receipt",
+        constitution_hash="1" * 64,
+        amendment_chain_hash="2" * 64,
+        previous_bundle_hash="0" * 64,
+        admitted_at=admitted_at,
+    )
+    record = execution.receipt.record
+    with pytest.raises(ValueError, match="case revision"):
+        execution.receipt._consume(
+            run,
+            foreign,
+            configuration_semantic_sha256=record.configuration_semantic_sha256,
+            repository_snapshot_sha256=record.repository_snapshot_sha256,
+            validator_source_sha256=record.validator_source_sha256,
+        )
+    bundle = run.evidence_bundle(
+        bundle_id="bundle_receipt",
+        case_id="case_receipt",
+        workflow_revision=5,
+        constitution_id="constitution_receipt",
+        constitution_hash="1" * 64,
+        amendment_chain_hash="2" * 64,
+        previous_bundle_hash="0" * 64,
+        admitted_at=admitted_at,
+    )
+    execution.receipt._consume(
+        run,
+        bundle,
+        configuration_semantic_sha256=record.configuration_semantic_sha256,
+        repository_snapshot_sha256=record.repository_snapshot_sha256,
+        validator_source_sha256=record.validator_source_sha256,
+    )
+    with pytest.raises(ValueError, match="already been consumed"):
+        execution.receipt._consume(
+            run,
+            bundle,
+            configuration_semantic_sha256=record.configuration_semantic_sha256,
+            repository_snapshot_sha256=record.repository_snapshot_sha256,
+            validator_source_sha256=record.validator_source_sha256,
+        )
 
 
 def test_approved_fixture_identity_is_independent_of_staging(tmp_path: Path) -> None:
@@ -177,6 +412,48 @@ def test_approved_fixture_identity_is_independent_of_staging(tmp_path: Path) -> 
     assert [item.path for item in identity.input_semantics] == sorted(
         path.as_posix() for path in APPROVED_INPUTS
     )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="production adapter supports Linux/macOS")
+def test_repository_snapshot_hashes_all_git_boundary_inventories(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def git(*arguments: str) -> None:
+        subprocess.run(  # noqa: S603 - fixed git binary and test-owned arguments
+            ("/usr/bin/git", *arguments),
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    git("init")
+    git("config", "user.name", "QuantForge Test")
+    git("config", "user.email", "quantforge@example.invalid")
+    (repository / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+    (repository / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    git("add", ".gitignore", "tracked.txt")
+    git("commit", "-m", "fixture")
+    git("tag", "-a", "v1.0.0", "-m", "fixture tag")
+    git("remote", "add", "origin", "https://github.com/example/fixture.git")
+    (repository / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+    (repository / "ignored.txt").write_text("ignored\n", encoding="utf-8")
+    executable = tmp_path / "unused-executable"
+    executable.write_bytes(b"fixture")
+    adapter = ReleaseFixtureAdapter(
+        repository=repository,
+        executable=executable,
+        expected_executable_sha256=_sha256(executable),
+        work_root=tmp_path,
+    )
+    before = adapter._repository_snapshot()
+    (repository / "tracked.txt").write_text("mutated\n", encoding="utf-8")
+    after = adapter._repository_snapshot()
+    assert before.repository_root == str(repository)
+    assert before.tag_type == "tag"
+    assert before.tracked_inventory_sha256 != after.tracked_inventory_sha256
+    assert before.status_sha256 != after.status_sha256
 
 
 @pytest.mark.parametrize(
@@ -500,7 +777,6 @@ def test_adapter_validates_json_csv_schemas_and_numeric_fact_shape(tmp_path: Pat
 
 def test_verified_bundle_and_experiment_event_commit_atomically(tmp_path: Path) -> None:
     adapter = _adapter(tmp_path / "adapter")
-    run = adapter.execute_approved_fixture()
     complete = run_demo("provisional")
     prefix = AuditLog(complete.audit_log.events[:5])
     case = prefix.replay_case(require_complete=False)
@@ -511,9 +787,64 @@ def test_verified_bundle_and_experiment_event_commit_atomically(tmp_path: Path) 
     signer = HmacSha256TestSigner(
         signer_id="signer_fixture", secret=b"0123456789abcdef0123456789abcdef"
     )
-    admitted_at = run.execution_completed_at + timedelta(seconds=1)
-    bundle = run.evidence_bundle(
-        bundle_id="bundle_fixture",
+    admitted = execute_and_admit_engine_evidence(
+        store,
+        adapter,
+        case_id=case.case_id,
+        evidence_id="evidence_engine_fixture",
+        signer=signer,
+    )
+    assert admitted.durable_case.revision == 6
+    assert admitted.durable_case.case.state.value == "EXPERIMENT_EXECUTED"
+    assert store.inspect().bundle_count == 1
+    assert store.list_evidence_bundles(case.case_id) == (admitted.bundle,)
+    store.verify()
+    package = tmp_path / "engine-package"
+    export_durable_case(store, case.case_id, package)
+    assert verify_case_package(package)["valid"] is True
+
+    with pytest.raises(ValueError, match="locked, not-yet-executed"):
+        execute_and_admit_engine_evidence(
+            store,
+            adapter,
+            case_id=case.case_id,
+            evidence_id="evidence_duplicate",
+            signer=signer,
+        )
+
+
+@pytest.mark.malicious
+def test_forged_structurally_valid_bundle_cannot_claim_execution_authenticity(
+    tmp_path: Path,
+) -> None:
+    adapter = _adapter(tmp_path / "adapter")
+    run = adapter.execute_approved_fixture()
+    summary = run.output_root / "fixture/portfolio_performance_summary.csv"
+    summary.write_text("schema_version,total_return\n3,9.999\n", encoding="utf-8")
+    output_semantics, output_observations = adapter._inventory_outputs(run.output_root)
+    forged_run = replace(
+        run,
+        output_semantics=output_semantics,
+        output_observations=output_observations,
+        validators=(
+            ValidatorResult(
+                name="validate_results",
+                status="passed",
+                output_sha256="f" * 64,
+            ),
+        ),
+        numeric_facts=(adapter._extract_numeric_fact(run.output_root),),
+    )
+    complete = run_demo("provisional")
+    prefix = AuditLog(complete.audit_log.events[:5])
+    case = prefix.replay_case(require_complete=False)
+    assert case.constitution is not None and case.proposal is not None
+    store = SQLiteCaseStore(tmp_path / "forged.sqlite3")
+    store.initialize()
+    persist_audited_case(store, prefix)
+    admitted_at = forged_run.execution_completed_at + timedelta(seconds=1)
+    bundle = forged_run.evidence_bundle(
+        bundle_id="bundle_forged_numeric_result",
         case_id=case.case_id,
         workflow_revision=5,
         constitution_id=case.constitution.constitution_id,
@@ -521,7 +852,6 @@ def test_verified_bundle_and_experiment_event_commit_atomically(tmp_path: Path) 
         amendment_chain_hash=amendment_chain_hash(case.amendments),
         previous_bundle_hash="0" * 64,
         admitted_at=admitted_at,
-        signer=signer,
     )
     approved = adapter.approved_fixture_identity()
     context = EvidenceAdmissionContext(
@@ -536,29 +866,120 @@ def test_verified_bundle_and_experiment_event_commit_atomically(tmp_path: Path) 
         input_artifact_observations=approved.input_observations,
         now=admitted_at,
     )
-    admitted = admit_engine_evidence(
-        store,
-        bundle,
-        context,
-        run.output_root,
-        evidence_id="evidence_engine_fixture",
-        signer=signer,
-    )
-    assert admitted.durable_case.revision == 6
-    assert admitted.durable_case.case.state.value == "EXPERIMENT_EXECUTED"
-    assert store.inspect().bundle_count == 1
-    assert store.list_evidence_bundles(case.case_id) == (bundle,)
-    store.verify()
-
-    with pytest.raises(ValueError, match="locked, not-yet-executed"):
+    verify_evidence_bundle(bundle, context, forged_run.output_root)
+    with pytest.raises(ValueError, match="standalone"):
         admit_engine_evidence(
             store,
             bundle,
             context,
-            run.output_root,
-            evidence_id="evidence_duplicate",
-            signer=signer,
+            forged_run.output_root,
+            evidence_id="evidence_forged_numeric_result",
         )
+    evidence = evidence_from_bundle(
+        bundle,
+        evidence_id="evidence_forged_numeric_result",
+        claim_id=case.claim.claim_id,
+        experiment_id=case.proposal.experiment_id,
+    )
+    ledger = EvidenceLedger(
+        case_id=case.case_id,
+        experiment_id=case.proposal.experiment_id,
+        constitution_hash=case.constitution.constitution_hash,
+        claim_ids={case.claim.claim_id},
+    )
+    ledger.append(evidence)
+    machine = StateMachine(case, prefix)
+    machine.advance(
+        WorkflowState.EXPERIMENT_EXECUTED,
+        actor=RoleName.SYSTEM,
+        action="admit_engine_evidence",
+        timestamp=admitted_at,
+        payload=ledger.snapshot(),
+        updates={"evidence_ids": (evidence.evidence_id,)},
+    )
+    with pytest.raises(ValueError, match="trusted execution receipt"):
+        store.admit_evidence_bundle(
+            bundle,
+            machine.audit_log.events[-1],
+            expected_revision=5,
+        )
+    assert store.inspect().bundle_count == 0
+    assert store.inspect().event_count == 5
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "null_bundle_id",
+        "substitute_bundle_id",
+        "delete_bundle",
+        "delete_artifact",
+        "substitute_artifact",
+    ],
+)
+@pytest.mark.malicious
+def test_engine_bundle_materialization_mutations_fail_reconstruction(
+    tmp_path: Path, mutation: str
+) -> None:
+    adapter = _adapter(tmp_path / "adapter")
+    result = run_demo("provisional")
+    prefix = AuditLog(result.audit_log.events[:5])
+    store = SQLiteCaseStore(tmp_path / f"{mutation}.sqlite3")
+    store.initialize()
+    persist_audited_case(store, prefix)
+    admitted = execute_and_admit_engine_evidence(
+        store,
+        adapter,
+        case_id="case_provisional",
+        evidence_id="evidence_engine_mutation",
+    )
+    bundle_id = admitted.bundle.semantic.bundle_id
+    connection = sqlite3.connect(store.path)
+    try:
+        if mutation == "null_bundle_id":
+            connection.execute(
+                "UPDATE evidence_records SET bundle_id = NULL WHERE case_id = ?",
+                ("case_provisional",),
+            )
+        elif mutation == "substitute_bundle_id":
+            substitute = "bundle_substituted"
+            connection.execute(
+                "UPDATE evidence_records SET bundle_id = ? WHERE case_id = ?",
+                (substitute, "case_provisional"),
+            )
+            connection.execute(
+                "UPDATE evidence_bundles SET bundle_id = ? WHERE bundle_id = ?",
+                (substitute, bundle_id),
+            )
+            connection.execute(
+                "UPDATE bundle_artifacts SET bundle_id = ? WHERE bundle_id = ?",
+                (substitute, bundle_id),
+            )
+        elif mutation == "delete_bundle":
+            connection.execute("DELETE FROM evidence_bundles WHERE bundle_id = ?", (bundle_id,))
+        elif mutation == "delete_artifact":
+            connection.execute(
+                """
+                DELETE FROM bundle_artifacts WHERE rowid = (
+                    SELECT rowid FROM bundle_artifacts WHERE bundle_id = ? LIMIT 1
+                )
+                """,
+                (bundle_id,),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE bundle_artifacts SET byte_sha256 = ? WHERE rowid = (
+                    SELECT rowid FROM bundle_artifacts WHERE bundle_id = ? LIMIT 1
+                )
+                """,
+                ("a" * 64, bundle_id),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises(ValueError):
+        store.reconstruct("case_provisional")
 
 
 def test_failed_bundle_admission_rolls_back_bundle_and_event(tmp_path: Path) -> None:
@@ -596,7 +1017,7 @@ def test_failed_bundle_admission_rolls_back_bundle_and_event(tmp_path: Path) -> 
         now=admitted_at,
     )
     (run.output_root / "extra.csv").write_text("value\n1\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="inventory"):
+    with pytest.raises(ValueError, match="standalone"):
         admit_engine_evidence(
             store,
             bundle,
@@ -737,6 +1158,24 @@ def test_phase2a_cli_store_engine_admission_and_export_workflow(
                 *evidence_arguments,
                 "--evidence-id",
                 "evidence_cpp_cli",
+            ]
+        )
+        == 2
+    )
+    assert (
+        main(
+            [
+                "engine",
+                "execute-and-admit-fixture",
+                *engine_arguments,
+                "--store",
+                str(fixture_store),
+                "--case-id",
+                "case_provisional",
+                "--evidence-id",
+                "evidence_cpp_cli",
+                "--bundle-output",
+                str(tmp_path / "trusted-bundle.json"),
             ]
         )
         == 0

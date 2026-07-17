@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from quantforge.audit import AuditLog
 from quantforge.domain.models import EvidenceObject, RoleName, WorkflowState
+from quantforge.engine.base import EngineAdapter
 from quantforge.evidence.bundle import (
     GENESIS_BUNDLE_HASH,
     BundleSigner,
@@ -18,6 +20,7 @@ from quantforge.evidence.bundle import (
 )
 from quantforge.evidence.graph import ClaimGraph
 from quantforge.evidence.ledger import EvidenceLedger, verify_source_artifact
+from quantforge.serialization.canonical import canonical_sha256
 from quantforge.storage.base import CaseStore, DurableCase
 from quantforge.workflow.machine import StateMachine
 
@@ -42,6 +45,8 @@ def persist_audited_case(
     events = audit_log.events
     if not cases or len(cases) != len(events):
         raise ValueError("audited case persistence requires a nonempty replayable history")
+    if cases[-1].state is WorkflowState.CHAIR_EXPLANATION and claim_graph is None:
+        raise ValueError("finalized audited cases require a revision-anchored claim graph")
     store.create_case(cases[0], events[0])
     for expected_revision, event in enumerate(events[1:], start=1):
         store.append_event(event, expected_revision=expected_revision)
@@ -62,9 +67,23 @@ def admit_engine_evidence(
     evidence_id: str,
     signer: BundleSigner | None = None,
 ) -> EvidenceAdmissionResult:
-    """Verify and atomically admit one engine bundle plus its workflow event."""
+    """Reject delayed/serialized admission: integrity verification is a separate operation."""
 
-    durable = store.reconstruct(context.case_id, require_complete=False)
+    del store, bundle, context, artifact_root, evidence_id, signer
+    raise ValueError("standalone engine evidence admission is unsupported; use execute-and-admit")
+
+
+def execute_and_admit_engine_evidence(
+    store: CaseStore,
+    adapter: EngineAdapter,
+    *,
+    case_id: str,
+    evidence_id: str,
+    signer: BundleSigner | None = None,
+) -> EvidenceAdmissionResult:
+    """Execute, independently validate, construct, verify, and atomically admit in-process."""
+
+    durable = store.reconstruct(case_id, require_complete=False)
     case = durable.case
     if (
         case.state is not WorkflowState.CONSTITUTION_LOCKED
@@ -72,24 +91,56 @@ def admit_engine_evidence(
         or case.proposal is None
     ):
         raise ValueError("engine evidence requires a locked, not-yet-executed constitution")
-    if (
-        context.case_id != case.case_id
-        or context.workflow_revision != durable.revision
-        or context.constitution_id != case.constitution.constitution_id
-        or context.constitution_hash != case.constitution.constitution_hash
-        or context.amendment_chain_hash != amendment_chain_hash(case.amendments)
-        or context.finalized
-        or context.previous_bundle_hash != GENESIS_BUNDLE_HASH
-    ):
-        raise ValueError("evidence admission context does not match durable governed state")
-    verify_evidence_bundle(bundle, context, artifact_root, signer=signer)
+    if durable.evidence_ledger is not None or store.list_evidence_bundles(case_id):
+        raise ValueError("primary engine evidence has already been admitted")
+    chain_hash = amendment_chain_hash(case.amendments)
+    execution = adapter.execute_trusted_fixture(
+        case_id=case.case_id,
+        workflow_revision=durable.revision,
+        constitution_id=case.constitution.constitution_id,
+        constitution_hash=case.constitution.constitution_hash,
+        amendment_chain_hash=chain_hash,
+    )
+    run = execution.run
+    admitted_at = datetime.now(UTC)
+    bundle_identity = {
+        "case_id": case.case_id,
+        "revision": durable.revision,
+        "run": execution.receipt.record.run_fingerprint,
+    }
+    bundle_id = f"bundle_{canonical_sha256(bundle_identity)[:32]}"
+    bundle = run.evidence_bundle(
+        bundle_id=bundle_id,
+        case_id=case.case_id,
+        workflow_revision=durable.revision,
+        constitution_id=case.constitution.constitution_id,
+        constitution_hash=case.constitution.constitution_hash,
+        amendment_chain_hash=chain_hash,
+        previous_bundle_hash=GENESIS_BUNDLE_HASH,
+        admitted_at=admitted_at,
+        signer=signer,
+    )
+    context = EvidenceAdmissionContext(
+        case_id=case.case_id,
+        workflow_revision=durable.revision,
+        constitution_id=case.constitution.constitution_id,
+        constitution_hash=case.constitution.constitution_hash,
+        amendment_chain_hash=chain_hash,
+        engine=run.engine,
+        configuration_sha256=run.configuration_sha256,
+        input_artifacts=run.input_semantics,
+        input_artifact_observations=run.input_observations,
+        previous_bundle_hash=GENESIS_BUNDLE_HASH,
+        now=admitted_at,
+    )
+    verify_evidence_bundle(bundle, context, run.output_root, signer=signer)
     evidence = evidence_from_bundle(
         bundle,
         evidence_id=evidence_id,
         claim_id=case.claim.claim_id,
         experiment_id=case.proposal.experiment_id,
     )
-    verify_source_artifact(evidence, artifact_root, max_bytes=16 * 1024 * 1024)
+    verify_source_artifact(evidence, run.output_root, max_bytes=16 * 1024 * 1024)
     ledger = EvidenceLedger(
         case_id=case.case_id,
         experiment_id=case.proposal.experiment_id,
@@ -107,7 +158,20 @@ def admit_engine_evidence(
         updates={"evidence_ids": (evidence.evidence_id,)},
     )
     event = machine.audit_log.events[-1]
-    store.admit_evidence_bundle(bundle, event, expected_revision=durable.revision)
+    receipt_record = execution.receipt.record
+    capability = execution.receipt._consume(
+        run,
+        bundle,
+        configuration_semantic_sha256=receipt_record.configuration_semantic_sha256,
+        repository_snapshot_sha256=receipt_record.repository_snapshot_sha256,
+        validator_source_sha256=receipt_record.validator_source_sha256,
+    )
+    store.admit_evidence_bundle(
+        bundle,
+        event,
+        expected_revision=durable.revision,
+        capability=capability,
+    )
     return EvidenceAdmissionResult(
         bundle=bundle,
         evidence=evidence,
@@ -115,4 +179,9 @@ def admit_engine_evidence(
     )
 
 
-__all__ = ["EvidenceAdmissionResult", "admit_engine_evidence", "persist_audited_case"]
+__all__ = [
+    "EvidenceAdmissionResult",
+    "admit_engine_evidence",
+    "execute_and_admit_engine_evidence",
+    "persist_audited_case",
+]

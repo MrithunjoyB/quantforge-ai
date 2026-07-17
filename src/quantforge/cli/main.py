@@ -28,6 +28,7 @@ from quantforge.serialization.safe_json import safe_load_json, safe_write_json
 from quantforge.storage import (
     SQLiteCaseStore,
     admit_engine_evidence,
+    execute_and_admit_engine_evidence,
     export_durable_case,
     persist_audited_case,
     verify_case_package,
@@ -115,6 +116,12 @@ def _build_parser() -> argparse.ArgumentParser:
     execute.add_argument("--store", type=Path, required=True)
     execute.add_argument("--case-id", required=True)
     execute.add_argument("--bundle-output", type=Path, required=True)
+    execute_and_admit = engine_commands.add_parser("execute-and-admit-fixture")
+    _add_engine_arguments(execute_and_admit)
+    execute_and_admit.add_argument("--store", type=Path, required=True)
+    execute_and_admit.add_argument("--case-id", required=True)
+    execute_and_admit.add_argument("--evidence-id", required=True)
+    execute_and_admit.add_argument("--bundle-output", type=Path, required=True)
 
     evidence = commands.add_parser("evidence")
     evidence_commands = evidence.add_subparsers(dest="evidence_command", required=True)
@@ -284,6 +291,28 @@ def _handle_engine(args: argparse.Namespace) -> int:
                     "allowed_commands": adapter.allowed_commands,
                     "engine": identity,
                     "valid": True,
+                }
+            )
+        )
+        return 0
+    if args.engine_command == "execute-and-admit-fixture":
+        store = SQLiteCaseStore(args.store)
+        result = execute_and_admit_engine_evidence(
+            store,
+            adapter,
+            case_id=args.case_id,
+            evidence_id=args.evidence_id,
+        )
+        safe_write_json(args.bundle_output, result.bundle)
+        print(
+            canonical_json(
+                {
+                    "bundle_file": str(args.bundle_output),
+                    "bundle_hash": result.bundle.bundle_hash,
+                    "case_id": result.durable_case.case.case_id,
+                    "evidence_id": result.evidence.evidence_id,
+                    "revision": result.durable_case.revision,
+                    "state": result.durable_case.case.state.value,
                 }
             )
         )
