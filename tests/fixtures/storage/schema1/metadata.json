@@ -1,0 +1,15 @@
+{
+  "audit_head_hash": "3b50cea522cc1a5251049486084cd68f6e3520e6fd78b1f68c0e659918e22f77",
+  "case_id": "case_provisional",
+  "database_sha256": "696d8f64ef6556019c573366be4f9151953c8eca40f6b8760a7f18ac6ab9cc2a",
+  "fixture_origin": "Created directly at schema 1 with the unmodified 76f91a3 baseline migration and runtime; never downgraded from a later database.",
+  "graph_hash": "9390eaf9948a8a0f74dce083f037cebd2628d81f53528282f520b019a6810664",
+  "migration_checksums": {
+    "1": "08b180250967e016529572d51bccd7a1fcf5ea7f7d22f28bd53e471c90a2076f"
+  },
+  "origin_commit": "76f91a3e0003fae6c54c5a867f5ecf2eeff44c53",
+  "revision": 12,
+  "schema_fingerprint": "2df9024847e240218f1bd9ca7d1cc43902e1ab301f0d37b4aa720ceb84b3c690",
+  "schema_version": 1,
+  "semantic_hash": "0912b9d6810e81fa71678ada532cb3959456f5a2f37943bd5fd0e7cd7019c9d6"
+}

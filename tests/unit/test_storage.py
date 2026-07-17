@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from quantforge.audit import AuditLog
 from quantforge.domain.models import WorkflowState
-from quantforge.serialization.canonical import canonical_sha256
+from quantforge.serialization.canonical import canonical_json, canonical_sha256
 from quantforge.serialization.safe_json import safe_load_json
-from quantforge.storage import DurableCase, SQLiteCaseStore, persist_audited_case
+from quantforge.storage import CaseStore, DurableCase, SQLiteCaseStore, persist_audited_case
 from quantforge.storage.sqlite import (
+    _SCHEMA_FINGERPRINTS,
     LATEST_SCHEMA_VERSION,
+    MIGRATIONS,
     RevisionConflictError,
 )
 from quantforge.workflow.demo import run_demo
@@ -27,27 +32,43 @@ def _initialized_store(path: Path) -> SQLiteCaseStore:
     return store
 
 
+def test_case_store_abstract_defaults_fail_closed() -> None:
+    receiver = cast(CaseStore, None)
+    unknown = cast(Any, None)
+    getter = cast(Any, CaseStore.path).fget
+    assert getter is not None
+    calls = (
+        lambda: getter(receiver),
+        lambda: CaseStore.initialize(receiver),
+        lambda: CaseStore.inspect(receiver),
+        lambda: CaseStore.migrate(receiver, dry_run=True),
+        lambda: CaseStore.create_case(receiver, unknown, unknown),
+        lambda: CaseStore.append_event(receiver, unknown, expected_revision=1),
+        lambda: CaseStore.admit_evidence_bundle(receiver, unknown, unknown, expected_revision=1),
+        lambda: CaseStore.save_claim_graph(receiver, "case", unknown, expected_revision=1),
+        lambda: CaseStore.list_evidence_bundles(receiver, "case"),
+        lambda: CaseStore.find_export(receiver, "case", "export"),
+        lambda: CaseStore.latest_export(receiver, "case"),
+        lambda: CaseStore.record_export(
+            receiver,
+            "case",
+            unknown,
+            expected_revision=1,
+            created_at=unknown,
+        ),
+        lambda: CaseStore.reconstruct(receiver, "case"),
+        lambda: CaseStore.verify(receiver),
+    )
+    for call in calls:
+        with pytest.raises(NotImplementedError):
+            call()
+
+
 def _persist_complete(path: Path) -> tuple[SQLiteCaseStore, DurableCase]:
     store = _initialized_store(path)
     result = run_demo("provisional")
     durable = persist_audited_case(store, result.audit_log, claim_graph=result.claim_graph)
     return store, durable
-
-
-def _downgrade_to_v1(path: Path) -> None:
-    connection = sqlite3.connect(path)
-    try:
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        connection.execute("BEGIN EXCLUSIVE")
-        connection.execute("DROP INDEX exports_revision_idx")
-        connection.execute("DROP TABLE export_artifacts")
-        connection.execute("DROP TABLE exports")
-        connection.execute("DELETE FROM migration_history WHERE version = 2")
-        connection.execute("UPDATE store_metadata SET schema_version = 1 WHERE singleton = 1")
-        connection.execute("PRAGMA user_version=1")
-        connection.commit()
-    finally:
-        connection.close()
 
 
 def test_durable_case_round_trip_materializes_every_governed_record(tmp_path: Path) -> None:
@@ -134,6 +155,142 @@ def test_payload_and_audit_chain_corruption_fail_closed(tmp_path: Path) -> None:
         store.reconstruct("case_provisional")
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "delete_graph",
+        "alter_graph",
+        "delete_reviewer",
+        "alter_review",
+        "alter_verdict",
+        "workflow_state",
+        "clear_finalization",
+        "revision",
+        "schema_version",
+        "updated_at",
+        "semantic_hash",
+        "audit_head",
+        "partial_graph_anchor",
+        "extra_graph",
+    ],
+)
+@pytest.mark.malicious
+def test_authoritative_materialization_mutations_fail_closed(tmp_path: Path, mutation: str) -> None:
+    store, _ = _persist_complete(tmp_path / f"{mutation}.sqlite3")
+    connection = sqlite3.connect(store.path)
+    try:
+        if mutation == "delete_graph":
+            connection.execute("DELETE FROM claim_graphs WHERE case_id = ?", ("case_provisional",))
+        elif mutation == "alter_graph":
+            row = connection.execute(
+                "SELECT payload_json FROM claim_graphs WHERE case_id = ?",
+                ("case_provisional",),
+            ).fetchone()
+            assert row is not None
+            value = _parse_json_object(str(row[0]))
+            nodes = value["nodes"]
+            assert isinstance(nodes, list) and isinstance(nodes[0], dict)
+            nodes[0]["substantive_final_claim"] = not bool(nodes[0]["substantive_final_claim"])
+            connection.execute(
+                "UPDATE claim_graphs SET payload_json = ?, payload_hash = ? WHERE case_id = ?",
+                (canonical_json(value), canonical_sha256(value), "case_provisional"),
+            )
+        elif mutation == "delete_reviewer":
+            connection.execute(
+                "DELETE FROM reviewer_outputs WHERE case_id = ? AND revision = 7",
+                ("case_provisional",),
+            )
+        elif mutation == "alter_review":
+            row = connection.execute(
+                "SELECT payload_json FROM reviewer_outputs WHERE case_id = ? AND revision = 7",
+                ("case_provisional",),
+            ).fetchone()
+            assert row is not None
+            value = _parse_json_object(str(row[0]))
+            value["review_id"] = "statistics_substituted"
+            connection.execute(
+                """
+                UPDATE reviewer_outputs SET payload_json = ?, payload_hash = ?
+                WHERE case_id = ? AND revision = 7
+                """,
+                (canonical_json(value), canonical_sha256(value), "case_provisional"),
+            )
+        elif mutation == "alter_verdict":
+            row = connection.execute(
+                "SELECT payload_json FROM verdict_results WHERE case_id = ?",
+                ("case_provisional",),
+            ).fetchone()
+            assert row is not None
+            value = _parse_json_object(str(row[0]))
+            value["decisive_reasons"] = ["substituted but valid narrative"]
+            connection.execute(
+                "UPDATE verdict_results SET payload_json = ?, payload_hash = ? WHERE case_id = ?",
+                (canonical_json(value), canonical_sha256(value), "case_provisional"),
+            )
+        elif mutation == "workflow_state":
+            connection.execute(
+                "UPDATE cases SET state = ? WHERE case_id = ?",
+                (WorkflowState.VERDICT_ELIGIBILITY_COMPUTED.value, "case_provisional"),
+            )
+        elif mutation == "clear_finalization":
+            connection.execute(
+                "UPDATE cases SET finalized = 0 WHERE case_id = ?", ("case_provisional",)
+            )
+        elif mutation == "revision":
+            connection.execute(
+                "UPDATE cases SET revision = 11 WHERE case_id = ?", ("case_provisional",)
+            )
+        elif mutation == "schema_version":
+            connection.execute(
+                "UPDATE cases SET schema_version = ? WHERE case_id = ?",
+                ("9.9", "case_provisional"),
+            )
+        elif mutation == "updated_at":
+            connection.execute(
+                "UPDATE cases SET updated_at_utc = created_at_utc WHERE case_id = ?",
+                ("case_provisional",),
+            )
+        elif mutation == "semantic_hash":
+            connection.execute(
+                "UPDATE cases SET semantic_hash = ? WHERE case_id = ?",
+                ("1" * 64, "case_provisional"),
+            )
+        elif mutation == "audit_head":
+            connection.execute(
+                "UPDATE cases SET audit_head_hash = ? WHERE case_id = ?",
+                ("2" * 64, "case_provisional"),
+            )
+        elif mutation == "partial_graph_anchor":
+            connection.execute(
+                "UPDATE cases SET graph_hash = NULL WHERE case_id = ?",
+                ("case_provisional",),
+            )
+        else:
+            row = connection.execute(
+                "SELECT payload_json, payload_hash FROM claim_graphs WHERE case_id = ?",
+                ("case_provisional",),
+            ).fetchone()
+            assert row is not None
+            connection.execute(
+                """
+                INSERT INTO claim_graphs(case_id, revision, payload_json, payload_hash)
+                VALUES (?, 11, ?, ?)
+                """,
+                ("case_provisional", str(row[0]), str(row[1])),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises((ValueError, TypeError)):
+        store.reconstruct("case_provisional", require_complete=False)
+
+
+def _parse_json_object(payload: str) -> dict[str, object]:
+    value = json.loads(payload)
+    assert isinstance(value, dict)
+    return value
+
+
 def test_unknown_schema_objects_and_partial_migrations_are_rejected(tmp_path: Path) -> None:
     first = _initialized_store(tmp_path / "trigger.sqlite3")
     connection = sqlite3.connect(first.path)
@@ -193,6 +350,23 @@ def test_store_and_database_paths_reject_symlinks(tmp_path: Path) -> None:
         SQLiteCaseStore(link).inspect()
 
 
+@pytest.mark.parametrize("suffix", ["-wal", "-shm"])
+@pytest.mark.malicious
+def test_hostile_database_sidecars_are_bounded(tmp_path: Path, suffix: str) -> None:
+    store = _initialized_store(tmp_path / "cases.sqlite3")
+    sidecar = Path(f"{store.path}{suffix}")
+    target = tmp_path / "sidecar-target"
+    target.write_bytes(b"hostile")
+    sidecar.symlink_to(target)
+    with pytest.raises(ValueError, match="symlink"):
+        store.inspect()
+    sidecar.unlink()
+    with sidecar.open("wb") as stream:
+        stream.truncate(65 * 1024 * 1024)
+    with pytest.raises(ValueError, match="resource limit"):
+        store.inspect()
+
+
 def test_database_replacement_during_reconstruction_is_detected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -232,28 +406,37 @@ def test_post_finalization_event_injection_is_rejected(tmp_path: Path) -> None:
         store.append_event(event, expected_revision=12)
 
 
-def test_forward_migration_dry_run_and_semantic_invariance(tmp_path: Path) -> None:
-    fixture = safe_load_json(
-        Path(__file__).parents[1] / "fixtures/storage/v1_provisional_case.json"
-    )
-    store, durable = _persist_complete(tmp_path / "cases.sqlite3")
-    assert durable.semantic_hash == fixture["semantic_hash"]
-    assert durable.audit_head_hash == fixture["audit_head_hash"]
-    _downgrade_to_v1(store.path)
-
-    assert store.inspect().schema_version == 1
+@pytest.mark.parametrize("source_version", [1, 2])
+def test_frozen_historical_migration_preserves_semantics(
+    tmp_path: Path, source_version: int
+) -> None:
+    fixture_root = Path(__file__).parents[1] / f"fixtures/storage/schema{source_version}"
+    metadata = safe_load_json(fixture_root / "metadata.json")
+    source = fixture_root / "provisional_case.sqlite3"
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == metadata["database_sha256"]
+    assert _SCHEMA_FINGERPRINTS[source_version] == metadata["schema_fingerprint"]
+    assert {
+        str(migration.version): migration.checksum for migration in MIGRATIONS[:source_version]
+    } == metadata["migration_checksums"]
+    target = tmp_path / f"schema{source_version}.sqlite3"
+    shutil.copyfile(source, target)
+    store = SQLiteCaseStore(target)
+    assert store.inspect().schema_version == source_version
     dry_run = store.migrate(dry_run=True)
-    assert dry_run.schema_version == 2
+    assert dry_run.schema_version == LATEST_SCHEMA_VERSION
     assert dry_run.integrity == "dry_run_passed"
-    assert store.inspect().schema_version == 1
+    assert store.inspect().schema_version == source_version
 
     migrated = store.migrate()
-    assert migrated.schema_version == 2
-    reconstructed = store.reconstruct(fixture["case_id"], require_complete=True)
-    assert reconstructed.revision == fixture["revision"]
-    assert reconstructed.semantic_hash == fixture["semantic_hash"]
-    assert reconstructed.audit_head_hash == fixture["audit_head_hash"]
-    assert store.migrate().schema_version == 2
+    assert migrated.schema_version == LATEST_SCHEMA_VERSION
+    reconstructed = store.reconstruct(str(metadata["case_id"]), require_complete=True)
+    assert reconstructed.revision == metadata["revision"]
+    assert reconstructed.semantic_hash == metadata["semantic_hash"]
+    assert reconstructed.audit_head_hash == metadata["audit_head_hash"]
+    assert reconstructed.graph_revision == metadata["revision"]
+    assert reconstructed.graph_hash == metadata["graph_hash"]
+    assert store.verify().integrity == "passed"
+    assert store.migrate().schema_version == LATEST_SCHEMA_VERSION
 
 
 def test_empty_unknown_and_invalid_operations_fail_closed(tmp_path: Path) -> None:

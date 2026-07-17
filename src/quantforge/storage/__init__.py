@@ -9,6 +9,7 @@ from quantforge.storage.export import (
 from quantforge.storage.service import (
     EvidenceAdmissionResult,
     admit_engine_evidence,
+    execute_and_admit_engine_evidence,
     persist_audited_case,
 )
 from quantforge.storage.sqlite import SQLiteCaseStore
@@ -22,6 +23,7 @@ __all__ = [
     "SQLiteCaseStore",
     "StoreInspection",
     "admit_engine_evidence",
+    "execute_and_admit_engine_evidence",
     "export_durable_case",
     "persist_audited_case",
     "verify_case_package",

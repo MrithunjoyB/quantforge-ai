@@ -328,15 +328,18 @@ def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]
     return result
 
 
-def _strip_observational_fields(value: object) -> object:
+def _strip_observational_fields(value: object, *, path: tuple[str, ...] = ()) -> object:
     if isinstance(value, dict):
         return {
-            key: _strip_observational_fields(item)
+            key: _strip_observational_fields(item, path=(*path, key))
             for key, item in value.items()
-            if key not in _OBSERVATIONAL_JSON_FIELDS
+            if path or key not in _OBSERVATIONAL_JSON_FIELDS
         }
     if isinstance(value, list):
-        return [_strip_observational_fields(item) for item in value]
+        return [
+            _strip_observational_fields(item, path=(*path, str(index)))
+            for index, item in enumerate(value)
+        ]
     return value
 
 

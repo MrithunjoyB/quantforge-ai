@@ -9,6 +9,7 @@ from pathlib import Path
 
 from quantforge.audit import AuditLog
 from quantforge.domain.models import AuditEvent, TribunalCase
+from quantforge.engine.trust import _TrustedAdmissionCapability
 from quantforge.evidence.bundle import EvidenceBundle
 from quantforge.evidence.graph import ClaimGraph
 from quantforge.evidence.ledger import EvidenceLedger
@@ -32,6 +33,8 @@ class DurableCase:
     revision: int
     semantic_hash: str
     audit_head_hash: str
+    graph_revision: int | None
+    graph_hash: str | None
     evidence_ledger: EvidenceLedger | None
     claim_graph: ClaimGraph | None
 
@@ -81,6 +84,7 @@ class CaseStore(ABC):
         event: AuditEvent,
         *,
         expected_revision: int,
+        capability: _TrustedAdmissionCapability | None = None,
     ) -> int:
         raise NotImplementedError
 

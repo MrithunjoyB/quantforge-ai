@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from quantforge.evidence.bundle import (
     ArtifactObservation,
@@ -19,6 +20,9 @@ from quantforge.evidence.bundle import (
     NumericFactReference,
     ValidatorResult,
 )
+
+if TYPE_CHECKING:
+    from quantforge.engine.trust import TrustedEngineExecution
 
 
 @dataclass(frozen=True)
@@ -106,4 +110,18 @@ class EngineAdapter(ABC):
 
     @abstractmethod
     def execute_approved_fixture(self) -> EngineRun:
+        raise NotImplementedError
+
+    @abstractmethod
+    def execute_trusted_fixture(
+        self,
+        *,
+        case_id: str,
+        workflow_revision: int,
+        constitution_id: str,
+        constitution_hash: str,
+        amendment_chain_hash: str,
+    ) -> TrustedEngineExecution:
+        """Execute and validate while retaining a non-serializable receipt in-process."""
+
         raise NotImplementedError

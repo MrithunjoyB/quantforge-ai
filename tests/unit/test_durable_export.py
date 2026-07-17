@@ -94,6 +94,16 @@ def test_package_missing_extra_substituted_and_symlink_files_fail_closed(
     with pytest.raises(ValueError, match="symlink"):
         verify_case_package(tmp_path / "linked")
 
+    export_durable_case(store, result.case.case_id, tmp_path / "declared-extra")
+    extra = tmp_path / "declared-extra/unexpected.json"
+    extra.write_text("{}", encoding="utf-8")
+    manifest_path = tmp_path / "declared-extra/case_package_manifest.json"
+    manifest = safe_load_json(manifest_path)
+    manifest["artifacts"][extra.name] = hashlib.sha256(extra.read_bytes()).hexdigest()
+    manifest_path.write_text(canonical_json(manifest) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="outside the package contract"):
+        verify_case_package(tmp_path / "declared-extra")
+
 
 def test_graph_evidence_mismatch_is_detected_after_manifest_rehash(tmp_path: Path) -> None:
     result = run_demo("provisional")
@@ -112,6 +122,78 @@ def test_graph_evidence_mismatch_is_detected_after_manifest_rehash(tmp_path: Pat
     manifest_path.write_text(canonical_json(manifest) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="graph evidence identity"):
         verify_case_package(tmp_path / "package")
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "case_id",
+        "workflow_revision",
+        "workflow_state",
+        "complete",
+        "export_id",
+        "graph_declaration",
+        "evidence_ids",
+        "bundle_relationships",
+        "case_semantic_hash",
+        "audit_head_hash",
+        "artifacts",
+    ],
+)
+@pytest.mark.malicious
+def test_contradictory_manifest_derived_claims_fail_closed(tmp_path: Path, field: str) -> None:
+    result = run_demo("provisional")
+    store = SQLiteCaseStore(tmp_path / "cases.sqlite3")
+    store.initialize()
+    persist_audited_case(store, result.audit_log, claim_graph=result.claim_graph)
+    package = tmp_path / f"package-{field}"
+    export_durable_case(store, result.case.case_id, package)
+    manifest_path = package / "case_package_manifest.json"
+    manifest = safe_load_json(manifest_path)
+    if field == "case_id":
+        manifest[field] = "case_substituted"
+    elif field == "workflow_revision":
+        manifest[field] = 11
+    elif field == "workflow_state":
+        manifest[field] = "VERDICT_ELIGIBILITY_COMPUTED"
+    elif field == "complete":
+        manifest[field] = False
+    elif field == "export_id":
+        manifest[field] = "export_" + "f" * 32
+    elif field == "graph_declaration":
+        manifest["graph_present"] = False
+    elif field == "evidence_ids":
+        manifest[field] = []
+    elif field == "bundle_relationships":
+        manifest["evidence_bundle_ids"] = {"evidence_provisional": "bundle_substituted"}
+    elif field == "case_semantic_hash":
+        manifest[field] = "a" * 64
+    elif field == "audit_head_hash":
+        manifest[field] = "b" * 64
+    else:
+        manifest[field]["case.json"] = "c" * 64
+    manifest_path.write_text(canonical_json(manifest) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        verify_case_package(package)
+
+
+def test_export_lineage_failure_removes_new_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = run_demo("fragile")
+    store = SQLiteCaseStore(tmp_path / "cases.sqlite3")
+    store.initialize()
+    persist_audited_case(store, result.audit_log, claim_graph=result.claim_graph)
+
+    def reject_record(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise ValueError("simulated lineage conflict")
+
+    monkeypatch.setattr(store, "record_export", reject_record)
+    output = tmp_path / "orphan-must-not-remain"
+    with pytest.raises(ValueError, match="lineage conflict"):
+        export_durable_case(store, result.case.case_id, output)
+    assert not output.exists()
 
 
 def test_export_output_and_lineage_are_immutable(tmp_path: Path) -> None:

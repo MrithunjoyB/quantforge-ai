@@ -6,9 +6,16 @@ from pathlib import Path
 
 import pytest
 
+from quantforge.audit import AuditLog
 from quantforge.engine import LocalCppV1Adapter
 from quantforge.evidence.bundle import CPP_PEELED_TARGET, CPP_RELEASE, CPP_TAG_OBJECT
 from quantforge.serialization.canonical import canonical_json
+from quantforge.storage import (
+    SQLiteCaseStore,
+    execute_and_admit_engine_evidence,
+    persist_audited_case,
+)
+from quantforge.workflow.demo import run_demo
 
 
 def _integration_path(name: str) -> Path:
@@ -18,7 +25,7 @@ def _integration_path(name: str) -> Path:
     return Path(value)
 
 
-def test_immutable_cpp_v1_fixture_is_admitted_deterministically() -> None:
+def test_immutable_cpp_v1_fixture_is_admitted_deterministically(tmp_path: Path) -> None:
     repository = _integration_path("QUANTFORGE_CPP_V1_REPOSITORY")
     executable = _integration_path("QUANTFORGE_CPP_V1_EXECUTABLE")
     work_root = _integration_path("QUANTFORGE_CPP_V1_WORK_ROOT")
@@ -47,3 +54,17 @@ def test_immutable_cpp_v1_fixture_is_admitted_deterministically() -> None:
     assert first.output_root.is_relative_to(work_root)
     assert second.output_root.is_relative_to(work_root)
     assert not (repository / "results").exists()
+
+    demo = run_demo("provisional")
+    store = SQLiteCaseStore(tmp_path / "trusted-admission.sqlite3")
+    store.initialize()
+    persist_audited_case(store, AuditLog(demo.audit_log.events[:5]))
+    admitted = execute_and_admit_engine_evidence(
+        store,
+        adapter,
+        case_id="case_provisional",
+        evidence_id="evidence_cpp_v1_integration",
+    )
+    assert admitted.durable_case.revision == 6
+    assert admitted.durable_case.evidence_ledger is not None
+    assert store.verify().bundle_count == 1
