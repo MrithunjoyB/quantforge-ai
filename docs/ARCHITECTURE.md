@@ -7,7 +7,8 @@ QuantForge is a deterministic, offline research tribunal arranged as inward-faci
 3. `evidence` owns the append-only ledger, typed claim graph, and bound engine bundles.
 4. `audit` owns the single-case append-only hash chain and semantic state replay.
 5. `verdict` owns the pure conservative eligibility policy.
-6. `roles` owns provider-neutral typed interfaces and authority checks.
+6. `roles` owns provider-neutral typed results, provenance validation, injected orchestration, and
+   authority checks.
 7. `workflow` owns the only legal sequential orchestration.
 8. `storage` owns a backend-neutral case-store contract, SQLite implementation, migrations,
    reconstruction, and deterministic package export.
@@ -25,9 +26,10 @@ let the engine change tribunal state or decide that its own output is evidence.
 
 Raw engine files are untrusted. The adapter first validates the exact release and executable,
 stages a fixed public synthetic fixture into an isolated directory, executes fixed argument arrays,
-runs the release validator, inventories and hashes every output, and emits a bundle. QuantForge then
-checks the bundle against current durable case state in the same transaction that appends its
-workflow event and evidence materialization.
+runs the release validator, inventories and hashes every output, and issues a one-shot in-process
+receipt. QuantForge constructs the bundle from that retained run, checks it against current durable
+case state, consumes the receipt, and transactionally appends its workflow event, evidence, bundle,
+and artifact materializations. A bundle alone has integrity semantics, not execution authenticity.
 
 ## Durable and derived state
 
@@ -42,6 +44,10 @@ bounded busy waiting, and optimistic revisions, but not distributed consensus or
 anchor. A complete locally rehashed replacement remains detectable only when compared with a trusted
 external digest or signed/anchored publication.
 
-No live provider, market-data ingestion, broker, order, or trading component exists. A later
-provider adapter may propose typed role output, but code-owned workflow and evidence authority must
-remain unchanged.
+No live provider, market-data ingestion, broker, order, or trading component exists.
+`TribunalOrchestrator` receives a `RoleProvider` through dependency injection. Every
+`ProviderResult[T]` separates semantic provider/model/prompt/schema/validation/output identities
+from observational request IDs, timing, usage, retries, and transport metadata. Semantic result
+hashes enter verdict inputs; observational-only changes do not. Providers receive no state machine,
+filesystem, shell, engine, evidence-admission, graph, verdict-policy, broker, order, or trading
+authority.

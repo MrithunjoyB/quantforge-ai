@@ -18,3 +18,10 @@ The role matrix and the workflow transition table reject prohibited actors and a
 of provider prompts. The same immutable table governs live transitions and audit replay. A role may
 return a typed proposal or review, but only the state machine can admit it; the Researcher and Chair
 cannot advance any transition outside their one assigned boundary.
+
+The code-owned tribunal orchestrator receives its provider through dependency injection and retains
+each complete `ProviderResult`. Provider/model/prompt/schema/validation/output identities are
+semantic and participate in verdict inputs. Request IDs, timing, usage, retries, and transport are
+observational and cannot change eligibility by themselves. Providers receive no workflow object,
+filesystem, shell, engine, evidence-admission, graph, verdict-policy, broker, order, or trading
+authority.

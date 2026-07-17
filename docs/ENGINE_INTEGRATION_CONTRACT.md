@@ -13,6 +13,10 @@ protected sibling checkout. A separately reviewed executable is supplied with an
 and all experiment outputs go to an isolated `quantforge-engine-*` directory outside both
 repositories.
 
+The production adapter contract is supported on Linux and macOS only. Windows CI validates the
+Python package, frozen database fixtures, and offline mock paths; it does not establish genuine
+production C++ adapter execution support on Windows.
+
 ## Exact allow-list
 
 The adapter has no command-string API. It executes argument vectors corresponding only to:
@@ -40,11 +44,28 @@ file and executable bit, executable size/digest, version, methodology, and RNG l
 are the fixed equal-weight config and six public synthetic files. Each is copied with no-follow and
 inode/replacement checks, bounded size, exclusive destination creation, and `fsync`.
 
+Version discovery runs in a separate identity directory, never with the protected repository as
+the child working directory. The adapter snapshots repository root/common directory, remote, HEAD,
+branch, tag object/target/type, every ref, tracked and staged diffs, status, and content-hashed
+tracked/untracked/ignored inventories before and after execution. Every engine and validator child
+is followed by exact config/input/validator byte and semantic rehashing, staged inventory/type and
+symlink checks, and executable/validator identity checks. Staged inputs are made read-only where the
+host permits; post-child verification remains authoritative.
+
 Successful execution alone is insufficient. Admission additionally requires the exact config/input
 semantic and byte hashes, a complete bounded output inventory, supported JSON/CSV schema versions,
 the release `validate_results.py` result, finite decimal facts at declared CSV locations, closed
 units, and methodology metadata. The resulting bundle must match the locked constitution, case,
 workflow revision, amendment-chain head, engine identity, and prior-bundle head.
+
+Successful execution issues a one-shot, code-owned `cpp-v1-adapter/2.0` receipt in memory. The
+receipt binds the case/revision, constitution/amendments, release identities, executable, config,
+inputs, outputs, validator execution, invocation, and repository snapshot. Only
+`engine execute-and-admit-fixture` / `execute_and_admit_engine_evidence()` can consume it while
+constructing and atomically admitting the actual run. It is not a JSON model and cannot be supplied
+through CLI text, bundle fields, or database rows. Delayed and cross-process admission are
+unsupported. `evidence verify` remains a structural integrity operation; `evidence admit` rejects
+rather than offering a weaker fallback.
 
 The C++ engine remains authoritative for numerical values; QuantForge validates and cites those
 values without recalculating or strengthening them. Failed identity, schema, validation, provenance,
