@@ -82,10 +82,15 @@ def test_orchestrator_rejects_mismatched_provider_semantics(field: str) -> None:
     claim = run_demo("provisional").case.claim
     result = provider.propose(claim)
     semantic = result.semantic_provenance.model_copy(update={field: "f" * 64})
+    semantic_identity = semantic.model_dump(
+        mode="python", exclude={"raw_response_sha256"}, exclude_none=False
+    )
     tampered = result.model_copy(
         update={
             "semantic_provenance": semantic,
-            "semantic_hash": canonical_sha256({"output": result.output, "provenance": semantic}),
+            "semantic_hash": canonical_sha256(
+                {"output": result.output, "provenance": semantic_identity}
+            ),
         }
     )
     cast(Any, provider).propose = lambda _claim: tampered

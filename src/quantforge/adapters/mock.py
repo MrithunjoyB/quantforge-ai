@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from importlib import resources
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import Field, model_validator
 
@@ -54,12 +54,17 @@ from quantforge.domain.models import (
 )
 from quantforge.roles.chair import create_chair_explanation
 from quantforge.roles.contracts import (
+    ProviderAttemptObservation,
+    ProviderCallContext,
     ProviderObservationalProvenance,
     ProviderResult,
+    ProviderResultAny,
+    ProviderTransportOutcome,
     RoleAction,
     RoleAuthority,
     create_provider_result,
 )
+from quantforge.roles.requests import ContextKind, EvidenceSummary, GovernedRoleRequest
 from quantforge.serialization.canonical import canonical_decimal, canonical_sha256
 
 
@@ -179,6 +184,8 @@ class MockRoleProvider:
 
     provider_identity = "quantforge_mock_provider"
     model_snapshot = "typed-fixture-v1"
+    endpoint_class = "in_process"
+    sdk_version = "quantforge-in-process"
 
     def __init__(
         self,
@@ -410,6 +417,179 @@ class MockRoleProvider:
             ProviderResult[ChairExplanation],
         )
 
+    def invoke(self, request: GovernedRoleRequest) -> ProviderResultAny:
+        """Exercise the governed request path without network access or extra authority."""
+
+        RoleAuthority.require(request.role, request.action)
+        context = ProviderCallContext(
+            role=request.role,
+            action=request.action,
+            case_id=request.case_id,
+            case_revision=request.case_revision,
+            constitution_identity=request.constitution_identity,
+            amendment_chain_identity=request.amendment_chain_identity,
+            evidence_references=request.evidence_references,
+            context_item_identities=tuple(item.identity for item in request.context),
+            role_context_sha256=request.context_identity,
+            canonical_request_sha256=request.request_semantic_sha256,
+        )
+        if request.action is RoleAction.PROPOSE_PROTOCOL:
+            claim = self._context_model(request, ContextKind.USER_CLAIM, ResearchClaim)
+            proposal_output = self.propose(claim).output.model_copy(
+                update={
+                    "experiment_id": request.expected_output_id,
+                    "proposed_at": request.effective_at,
+                }
+            )
+            return self._result(
+                request.action,
+                proposal_output,
+                request.effective_at,
+                ProviderResult[ExperimentProposal],
+                call_context=context,
+            )
+        elif request.action is RoleAction.REVIEW_METHODOLOGY:
+            proposal = self._context_model(request, ContextKind.PROPOSAL, ExperimentProposal)
+            methodology_output = self.review_methodology(proposal).output.model_copy(
+                update={
+                    "review_id": request.expected_output_id,
+                    "reviewed_at": request.effective_at,
+                }
+            )
+            return self._result(
+                request.action,
+                methodology_output,
+                request.effective_at,
+                ProviderResult[MethodologyReview],
+                call_context=context,
+            )
+        elif request.action is RoleAction.REVIEW_STATISTICS:
+            references = self._request_evidence_references(request)
+            initial_statistics = self.review_statistics(cast(TribunalCase, object())).output
+            findings = tuple(
+                finding.model_copy(update={"evidence_references": references})
+                for finding in initial_statistics.findings
+            )
+            statistical_output = initial_statistics.model_copy(
+                update={
+                    "review_id": request.expected_output_id,
+                    "reviewed_at": request.effective_at,
+                    "findings": findings,
+                }
+            )
+            return self._result(
+                request.action,
+                statistical_output,
+                request.effective_at,
+                ProviderResult[StatisticalReview],
+                call_context=context,
+            )
+        elif request.action is RoleAction.REQUEST_CHALLENGE:
+            references = self._request_evidence_references(request)
+            initial_adversarial = self.review_adversarially(cast(TribunalCase, object())).output
+            challenges = tuple(
+                challenge.model_copy(update={"evidence_references": references[:1]})
+                for challenge in initial_adversarial.challenges
+            )
+            adversarial_output = initial_adversarial.model_copy(
+                update={
+                    "review_id": request.expected_output_id,
+                    "reviewed_at": request.effective_at,
+                    "challenges": challenges,
+                }
+            )
+            return self._result(
+                request.action,
+                adversarial_output,
+                request.effective_at,
+                ProviderResult[AdversarialReview],
+                call_context=context,
+            )
+        elif request.action is RoleAction.REVIEW_REPRODUCIBILITY:
+            reproducibility_output = self.review_reproducibility(
+                cast(TribunalCase, object())
+            ).output
+            if not request.code_owned_reproducibility_verified:
+                reproducibility_output = reproducibility_output.model_copy(
+                    update={
+                        "status": ReproducibilityStatus.PARTIAL,
+                        "configuration_verified": False,
+                        "manifests_verified": False,
+                        "hashes_verified": False,
+                        "software_identity_verified": False,
+                        "data_lineage_verified": False,
+                        "evidence_complete": False,
+                        "reconstruction_status": "Code owned verification was not supplied",
+                    }
+                )
+            reproducibility_output = reproducibility_output.model_copy(
+                update={
+                    "review_id": request.expected_output_id,
+                    "reviewed_at": request.effective_at,
+                }
+            )
+            return self._result(
+                request.action,
+                reproducibility_output,
+                request.effective_at,
+                ProviderResult[ReproducibilityReview],
+                call_context=context,
+            )
+        elif request.action is RoleAction.EXPLAIN_VERDICT:
+            eligibility = self._context_model(
+                request,
+                ContextKind.VERDICT_ELIGIBILITY,
+                VerdictEligibility,
+            )
+            chair_output = self.explain(
+                cast(TribunalCase, object()), eligibility
+            ).output.model_copy(
+                update={
+                    "explanation_id": request.expected_output_id,
+                    "created_at": request.effective_at,
+                }
+            )
+            return self._result(
+                request.action,
+                chair_output,
+                request.effective_at,
+                ProviderResult[ChairExplanation],
+                call_context=context,
+            )
+        else:  # pragma: no cover - RoleAuthority rejects every non-governed action.
+            raise PermissionError("mock provider action is not governed")
+
+    @staticmethod
+    def _context_model[ModelT: StrictModel](
+        request: GovernedRoleRequest,
+        kind: ContextKind,
+        model_type: type[ModelT],
+    ) -> ModelT:
+        matches = [item for item in request.context if item.kind is kind]
+        if len(matches) != 1:
+            raise ValueError(f"governed mock request requires exactly one {kind.value} item")
+        return model_type.model_validate_json(matches[0].content, strict=True)
+
+    @staticmethod
+    def _request_evidence_references(
+        request: GovernedRoleRequest,
+    ) -> tuple[EvidenceReference, ...]:
+        summaries = (
+            EvidenceSummary.model_validate_json(item.content, strict=True)
+            for item in request.context
+            if item.kind is ContextKind.EVIDENCE_SUMMARY
+        )
+        references = tuple(
+            EvidenceReference(
+                evidence_id=summary.evidence_id,
+                numeric_fact_ids=summary.numeric_fact_ids,
+            )
+            for summary in summaries
+        )
+        if not references:
+            raise ValueError("governed mock review requires supplied evidence summaries")
+        return references
+
     def _now(self) -> datetime:
         if self._timestamp_factory is not None:
             return self._timestamp_factory()
@@ -423,8 +603,28 @@ class MockRoleProvider:
         output: ResultT,
         timestamp: datetime,
         result_type: type[ProviderResult[ResultT]],
+        *,
+        call_context: ProviderCallContext | None = None,
     ) -> ProviderResult[ResultT]:
         suffix = f"{action.value}_{self._fixture.name}"
+        attempts = (
+            ()
+            if call_context is None
+            else (
+                ProviderAttemptObservation(
+                    attempt_index=0,
+                    request_id=f"request_{suffix}",
+                    response_id=f"response_{suffix}",
+                    requested_at=timestamp,
+                    responded_at=timestamp,
+                    latency_ms=0,
+                    outcome=ProviderTransportOutcome.ACCEPTED,
+                    provider_status="in_process",
+                    retryable=False,
+                    usage={"validated_objects": 1},
+                ),
+            )
+        )
         observations = ProviderObservationalProvenance(
             request_id=f"request_{suffix}",
             response_id=f"response_{suffix}",
@@ -433,6 +633,7 @@ class MockRoleProvider:
             latency_ms=0,
             usage={"validated_objects": 1},
             retry_count=0,
+            attempts=attempts,
             transport_metadata={"network_access": False, "transport": "in_process"},
         )
         return create_provider_result(
@@ -442,4 +643,5 @@ class MockRoleProvider:
             provider_identity=self.provider_identity,
             model_snapshot=self.model_snapshot,
             observations=observations,
+            call_context=call_context,
         )
