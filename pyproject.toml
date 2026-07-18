@@ -22,7 +22,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Information Analysis",
 ]
-dependencies = ["pydantic==2.12.5"]
+dependencies = ["openai==2.46.0", "pydantic==2.12.5"]
 
 [project.optional-dependencies]
 dev = [

@@ -17,7 +17,10 @@ def test_packaging_metadata_and_editable_build_dependencies_exist() -> None:
     assert "version" not in configuration["project"]
     assert configuration["tool"]["hatch"]["version"]["path"] == "src/quantforge/_version.py"
     assert configuration["project"]["requires-python"] == ">=3.12"
-    assert configuration["project"]["dependencies"] == ["pydantic==2.12.5"]
+    assert configuration["project"]["dependencies"] == [
+        "openai==2.46.0",
+        "pydantic==2.12.5",
+    ]
     assert configuration["project"]["license"] == "Apache-2.0"
     assert configuration["project"]["license-files"] == ["LICENSE", "NOTICE"]
     assert configuration["tool"]["hatch"]["build"]["exclude"] == ["/audit"]

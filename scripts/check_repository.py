@@ -81,7 +81,7 @@ def check_version_contract(root: Path) -> str:
         raise RepositoryCheckError("pyproject must obtain its version dynamically from one source")
     if hatch.get("version", {}).get("path") != "src/quantforge/_version.py":
         raise RepositoryCheckError("Hatch version path does not reference the authoritative source")
-    if project.get("dependencies") != ["pydantic==2.12.5"]:
+    if project.get("dependencies") != ["openai==2.46.0", "pydantic==2.12.5"]:
         raise RepositoryCheckError("direct runtime dependencies must remain exactly pinned")
     if project.get("license") != "Apache-2.0":
         raise RepositoryCheckError(
