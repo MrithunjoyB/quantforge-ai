@@ -123,11 +123,12 @@ def test_release_candidate_remote_boundary_is_exact(
 
 def test_package_inspection_separates_runtime_and_optional_requirements() -> None:
     requirements = [
+        "openai==2.46.0",
         "pydantic==2.12.5",
         "pytest==9.0.3; extra == 'dev'",
         "ruff==0.14.14; extra == 'dev'",
     ]
-    assert runtime_requirements(requirements) == ["pydantic==2.12.5"]
+    assert runtime_requirements(requirements) == ["openai==2.46.0", "pydantic==2.12.5"]
 
 
 def test_cyclonedx_sbom_generation_is_deterministic_and_versioned(tmp_path: Path) -> None:

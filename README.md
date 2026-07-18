@@ -14,9 +14,10 @@ pure policy compute the strongest defensible verdict.
 > believe them.
 
 This repository contains the independently audited **Phase 1 governance foundation** and the Phase
-2A durable local case store plus research-only C++ v1.0.0 evidence adapter. Version `v0.1.0` remains
-the immutable Phase 1 release; current Phase 2A work is unreleased. Roles may propose or explain, but
-code owns workflow state, evidence validity, human approval, and verdict strength.
+2A durable local case store plus research-only C++ v1.0.0 evidence adapter. The first bounded Phase
+2B stage adds an optional official OpenAI strict-structured provider and six governed role contracts.
+Version `v0.1.0` remains the immutable Phase 1 release. Roles may propose or explain, but code owns
+workflow state, evidence validity, human approval, constitutions, and verdict strength.
 
 After the locked development environment is installed, the exact offline demo command is:
 
@@ -30,9 +31,10 @@ for governance behavior—not financial evidence and not evidence of profitabili
 
 Phase 2A adds a schema-versioned SQLite backend, deterministic case packages, and one narrowly
 allow-listed, read-only adapter for the protected C++ `v1.0.0` public synthetic fixture. The C++
-release remains the numerical authority. There is no live OpenAI/provider integration, external
-market-data ingestion, retrieval system, web UI, broker connectivity, order submission, live
-trading, production deployment, investment advice, profitability claim, or guarantee.
+release remains the numerical authority. OpenAI mode is disabled by default, has no tool access, and
+requires an explicit operator model and environment credential. There is no external market-data
+ingestion, retrieval system, web UI, broker connectivity, order submission, live trading,
+production deployment, investment advice, profitability claim, or guarantee.
 
 ## Install and verify offline behavior
 
@@ -75,8 +77,9 @@ scripts/quality.sh
 ```
 
 The quality gate checks formatting, Ruff, strict mypy, full branch-aware pytest coverage, the 90%
-combined governance-critical coverage floor (including storage and engine), malicious-input
-regressions, repository/document/version contracts, CFF validity, secret patterns, and source/wheel
+combined governance-critical coverage floor (including provider, CLI, storage, and engine), plus
+per-module provider/orchestrator floors, malicious-input regressions, repository/document/version
+contracts, CFF validity, secret patterns, and source/wheel
 builds. Dependency vulnerability checks are enabled with `RUN_DEPENDENCY_AUDIT=1`.
 
 After committing an exact candidate, deterministic local release artifacts are produced with:
@@ -99,6 +102,10 @@ remains human-directed, reviewed, and maintained by Mrithunjoy Basumatary. AI sy
 project authors or copyright holders.
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Phase 2B structured provider contract](docs/PHASE_2B_PROVIDER_CONTRACT.md)
+- [Six governed role contracts](docs/ROLE_CONTRACTS.md)
+- [OpenAI provider runbook](docs/OPENAI_PROVIDER_RUNBOOK.md)
+- [Phase 2B provider threat model](docs/PHASE_2B_THREAT_MODEL.md)
 - [Storage model](docs/STORAGE_MODEL.md)
 - [Migration policy](docs/MIGRATION_POLICY.md)
 - [C++ engine integration contract](docs/ENGINE_INTEGRATION_CONTRACT.md)

@@ -74,7 +74,7 @@ def inspect_wheel(wheel: Path, version: str) -> dict[str, Any]:
         if metadata["Requires-Python"] != ">=3.12":
             raise RuntimeError("wheel Python requirement is inconsistent")
         requirements = metadata.get_all("Requires-Dist", [])
-        if runtime_requirements(requirements) != ["pydantic==2.12.5"]:
+        if runtime_requirements(requirements) != ["openai==2.46.0", "pydantic==2.12.5"]:
             raise RuntimeError("wheel runtime dependency metadata is inconsistent")
         if metadata["License-Expression"] != "Apache-2.0":
             raise RuntimeError("wheel license expression is inconsistent")

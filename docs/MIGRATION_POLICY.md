@@ -20,7 +20,7 @@ Migration rules are:
 Phase 2A includes genuine frozen schema-1 and schema-2 databases created directly with the baseline
 runtime, not downgraded from candidate code. Metadata records each original database digest,
 migration checksum, schema fingerprint, origin commit, and expected semantic/audit/graph identities.
-Tests copy each fixture, perform dry-run and real migration to schema 3, and prove those identities
+Tests copy each fixture, perform dry-run and real migration to schema 4, and prove those identities
 are unchanged. Adversarial tests cover partial history, future values, modified schema SQL, and
 repeat migration.
 

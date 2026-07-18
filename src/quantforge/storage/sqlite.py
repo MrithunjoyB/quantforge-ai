@@ -23,11 +23,19 @@ from quantforge.engine.trust import _TrustedAdmissionCapability
 from quantforge.evidence.bundle import EvidenceBundle
 from quantforge.evidence.graph import ClaimGraph, ClaimGraphSnapshot
 from quantforge.evidence.ledger import EvidenceLedger, EvidenceLedgerSnapshot
+from quantforge.roles.contracts import RoleAction
 from quantforge.serialization.canonical import canonical_json, canonical_sha256
 from quantforge.serialization.safe_json import reject_symlink_components, safe_parse_json
-from quantforge.storage.base import CaseStore, DurableCase, ExportRecord, StoreInspection
+from quantforge.storage.base import (
+    CaseStore,
+    DurableCase,
+    ExportRecord,
+    ProviderInvocationRecord,
+    ProviderInvocationStatus,
+    StoreInspection,
+)
 
-LATEST_SCHEMA_VERSION: Final = 3
+LATEST_SCHEMA_VERSION: Final = 4
 APPLICATION_ID: Final = 0x51464F52
 MAX_DATABASE_BYTES: Final = 64 * 1024 * 1024
 MAX_WAL_BYTES: Final = 64 * 1024 * 1024
@@ -270,6 +278,49 @@ MIGRATIONS: Final = (
             """,
         ),
     ),
+    Migration(
+        4,
+        "governed_provider_invocations",
+        (
+            """
+            CREATE TABLE provider_invocations (
+                case_id TEXT NOT NULL,
+                invocation_id TEXT NOT NULL,
+                case_revision INTEGER NOT NULL CHECK (case_revision >= 1),
+                reviewer_role TEXT NOT NULL,
+                role_action TEXT NOT NULL,
+                request_semantic_hash TEXT NOT NULL CHECK (length(request_semantic_hash) = 64),
+                status TEXT NOT NULL CHECK (status IN ('accepted', 'failed')),
+                record_json TEXT NOT NULL CHECK (length(record_json) <= 2000000),
+                record_hash TEXT NOT NULL CHECK (length(record_hash) = 64),
+                recorded_at_utc TEXT NOT NULL,
+                PRIMARY KEY (case_id, invocation_id),
+                FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE RESTRICT
+            ) STRICT
+            """,
+            """
+            CREATE TABLE provider_attempts (
+                case_id TEXT NOT NULL,
+                invocation_id TEXT NOT NULL,
+                attempt_index INTEGER NOT NULL CHECK (attempt_index BETWEEN 0 AND 2),
+                observation_json TEXT NOT NULL CHECK (length(observation_json) <= 2000000),
+                observation_hash TEXT NOT NULL CHECK (length(observation_hash) = 64),
+                PRIMARY KEY (case_id, invocation_id, attempt_index),
+                FOREIGN KEY (case_id, invocation_id)
+                    REFERENCES provider_invocations(case_id, invocation_id) ON DELETE RESTRICT
+            ) STRICT
+            """,
+            """
+            CREATE UNIQUE INDEX provider_accepted_vote_idx
+            ON provider_invocations(case_id, case_revision, reviewer_role, role_action)
+            WHERE status = 'accepted'
+            """,
+            """
+            CREATE INDEX provider_request_idx
+            ON provider_invocations(case_id, request_semantic_hash, recorded_at_utc)
+            """,
+        ),
+    ),
 )
 
 _EXPECTED_TABLES: Final = {
@@ -312,6 +363,23 @@ _EXPECTED_TABLES: Final = {
         "export_artifacts",
         "exports",
         "migration_history",
+        "reviewer_outputs",
+        "store_metadata",
+        "verdict_results",
+    },
+    4: {
+        "audit_events",
+        "bundle_artifacts",
+        "cases",
+        "claim_graphs",
+        "constitutions",
+        "evidence_bundles",
+        "evidence_records",
+        "export_artifacts",
+        "exports",
+        "migration_history",
+        "provider_attempts",
+        "provider_invocations",
         "reviewer_outputs",
         "store_metadata",
         "verdict_results",
@@ -465,6 +533,103 @@ class SQLiteCaseStore(CaseStore):
     def append_event(self, event: AuditEvent, *, expected_revision: int) -> int:
         with self._transaction() as connection:
             return self._append_event_transaction(connection, event, expected_revision)
+
+    def record_provider_invocation(
+        self,
+        record: ProviderInvocationRecord,
+        event: AuditEvent | None,
+        *,
+        expected_revision: int,
+        final_claim_graph: ClaimGraph | None = None,
+    ) -> int:
+        if record.case_revision != expected_revision:
+            raise ValueError("provider invocation is bound to a foreign case revision")
+        accepted = record.status is ProviderInvocationStatus.ACCEPTED
+        if accepted != (event is not None):
+            raise ValueError("only an accepted provider invocation may include a workflow event")
+        if event is not None and (
+            event.case_id != record.case_id or event.sequence != expected_revision + 1
+        ):
+            raise ValueError("provider workflow event is bound to a foreign case revision")
+        is_final = event is not None and event.workflow_state is WorkflowState.CHAIR_EXPLANATION
+        if is_final != (final_claim_graph is not None):
+            raise ValueError("Chair provider transaction requires exactly one final claim graph")
+        graph_snapshot: ClaimGraphSnapshot | None = None
+        graph_hash: str | None = None
+        if final_claim_graph is not None:
+            durable = self._reconstruct(
+                record.case_id,
+                require_complete=False,
+                allow_pending_final_graph=True,
+            )
+            if durable.revision != expected_revision or durable.evidence_ledger is None:
+                raise RevisionConflictError(
+                    "final graph is not bound to the current evidence revision"
+                )
+            final_claim_graph.validate_against_ledger(durable.evidence_ledger)
+            final_claim_graph.validate_final_claim_traceability()
+            graph_snapshot = final_claim_graph.snapshot()
+            graph_hash = canonical_sha256(graph_snapshot)
+        with self._transaction() as connection:
+            self._require_revision(connection, record.case_id, expected_revision)
+            self._insert_provider_invocation(connection, record)
+            if event is None:
+                return expected_revision
+            revision = self._append_event_transaction(connection, event, expected_revision)
+            if graph_snapshot is not None and graph_hash is not None:
+                self._anchor_final_graph_transaction(
+                    connection,
+                    record.case_id,
+                    revision,
+                    graph_snapshot,
+                    graph_hash,
+                )
+            return revision
+
+    def find_accepted_provider_invocation(
+        self,
+        case_id: str,
+        *,
+        case_revision: int,
+        action: RoleAction,
+    ) -> ProviderInvocationRecord | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT case_id, invocation_id, case_revision, reviewer_role, role_action,
+                       request_semantic_hash, status, record_json, record_hash, recorded_at_utc
+                FROM provider_invocations
+                WHERE case_id = ? AND case_revision = ? AND role_action = ?
+                      AND status = 'accepted'
+                """,
+                (case_id, case_revision, action.value),
+            ).fetchone()
+            if row is None:
+                return None
+            record = self._decode_provider_invocation(row)
+            self._verify_provider_attempt_rows(connection, record)
+            return record
+
+    def list_provider_invocations(self, case_id: str) -> tuple[ProviderInvocationRecord, ...]:
+        with self._connection() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM cases WHERE case_id = ?", (case_id,)
+            ).fetchone()
+            if exists is None:
+                raise ValueError("unknown case identifier")
+            rows = connection.execute(
+                """
+                SELECT case_id, invocation_id, case_revision, reviewer_role, role_action,
+                       request_semantic_hash, status, record_json, record_hash, recorded_at_utc
+                FROM provider_invocations
+                WHERE case_id = ? ORDER BY recorded_at_utc, invocation_id
+                """,
+                (case_id,),
+            ).fetchall()
+            records = tuple(self._decode_provider_invocation(row) for row in rows)
+            for record in records:
+                self._verify_provider_attempt_rows(connection, record)
+            return records
 
     def admit_evidence_bundle(
         self,
@@ -715,6 +880,7 @@ class SQLiteCaseStore(CaseStore):
                 ),
             )
             self._verify_materializations(connection, case, events, ledger)
+            self._verify_provider_invocations(connection, case_id, events)
             durable = DurableCase(
                 case=case,
                 audit_log=audit,
@@ -921,6 +1087,11 @@ class SQLiteCaseStore(CaseStore):
             if version >= 2
             else 0
         )
+        provider_invocations = (
+            int(connection.execute("SELECT count(*) FROM provider_invocations").fetchone()[0])
+            if version >= 4
+            else 0
+        )
         return StoreInspection(
             backend="sqlite",
             schema_version=version,
@@ -931,6 +1102,7 @@ class SQLiteCaseStore(CaseStore):
             ),
             export_count=exports,
             integrity=integrity,
+            provider_invocation_count=provider_invocations,
         )
 
     def _append_event_transaction(
@@ -984,6 +1156,156 @@ class SQLiteCaseStore(CaseStore):
         if changed != 1:
             raise RevisionConflictError("case revision changed during append")
         return event.sequence
+
+    def _insert_provider_invocation(
+        self,
+        connection: sqlite3.Connection,
+        record: ProviderInvocationRecord,
+    ) -> None:
+        record_json = canonical_json(record)
+        if len(record_json.encode("utf-8")) > MAX_CANONICAL_PAYLOAD_BYTES:
+            raise ValueError("provider invocation exceeds the durable resource limit")
+        record_hash = canonical_sha256(record)
+        existing = connection.execute(
+            """
+            SELECT record_json, record_hash FROM provider_invocations
+            WHERE case_id = ? AND invocation_id = ?
+            """,
+            (record.case_id, record.invocation_id),
+        ).fetchone()
+        if existing is not None:
+            if str(existing[0]) == record_json and str(existing[1]) == record_hash:
+                return
+            raise ValueError("immutable provider invocation identifier was substituted")
+        try:
+            connection.execute(
+                """
+                INSERT INTO provider_invocations(
+                    case_id, invocation_id, case_revision, reviewer_role, role_action,
+                    request_semantic_hash, status, record_json, record_hash, recorded_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.case_id,
+                    record.invocation_id,
+                    record.case_revision,
+                    record.role.value,
+                    record.action.value,
+                    record.request_semantic_sha256,
+                    record.status.value,
+                    record_json,
+                    record_hash,
+                    _utc_text(record.recorded_at),
+                ),
+            )
+            for attempt in record.attempts:
+                connection.execute(
+                    """
+                    INSERT INTO provider_attempts(
+                        case_id, invocation_id, attempt_index,
+                        observation_json, observation_hash
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.case_id,
+                        record.invocation_id,
+                        attempt.attempt_index,
+                        canonical_json(attempt),
+                        canonical_sha256(attempt),
+                    ),
+                )
+        except sqlite3.IntegrityError as error:
+            raise ValueError(
+                "provider retries cannot create duplicate durable reviewer votes"
+            ) from error
+
+    @staticmethod
+    def _anchor_final_graph_transaction(
+        connection: sqlite3.Connection,
+        case_id: str,
+        revision: int,
+        snapshot: ClaimGraphSnapshot,
+        graph_hash: str,
+    ) -> None:
+        existing = int(
+            connection.execute(
+                "SELECT count(*) FROM claim_graphs WHERE case_id = ?", (case_id,)
+            ).fetchone()[0]
+        )
+        if existing:
+            raise ValueError("final provider transaction requires an unanchored claim graph")
+        try:
+            connection.execute(
+                """
+                INSERT INTO claim_graphs(case_id, revision, payload_json, payload_hash)
+                VALUES (?, ?, ?, ?)
+                """,
+                (case_id, revision, canonical_json(snapshot), graph_hash),
+            )
+            changed = connection.execute(
+                """
+                UPDATE cases SET graph_revision = ?, graph_hash = ?
+                WHERE case_id = ? AND revision = ?
+                      AND graph_revision IS NULL AND graph_hash IS NULL
+                """,
+                (revision, graph_hash, case_id, revision),
+            ).rowcount
+        except sqlite3.IntegrityError as error:
+            raise ValueError("final claim graph is not an immutable unique anchor") from error
+        if changed != 1:
+            raise RevisionConflictError("case changed while anchoring its final claim graph")
+
+    @staticmethod
+    def _decode_provider_invocation(row: sqlite3.Row) -> ProviderInvocationRecord:
+        record = _decode_model(ProviderInvocationRecord, str(row[7]))
+        columns = (
+            str(row[0]),
+            str(row[1]),
+            int(row[2]),
+            str(row[3]),
+            str(row[4]),
+            str(row[5]),
+            str(row[6]),
+            str(row[9]),
+        )
+        expected = (
+            record.case_id,
+            record.invocation_id,
+            record.case_revision,
+            record.role.value,
+            record.action.value,
+            record.request_semantic_sha256,
+            record.status.value,
+            _utc_text(record.recorded_at),
+        )
+        if (
+            columns != expected
+            or canonical_sha256(record) != str(row[8])
+            or canonical_json(record) != str(row[7])
+        ):
+            raise ValueError("durable provider invocation hash mismatch")
+        return record
+
+    @staticmethod
+    def _verify_provider_attempt_rows(
+        connection: sqlite3.Connection,
+        record: ProviderInvocationRecord,
+    ) -> None:
+        rows = connection.execute(
+            """
+            SELECT attempt_index, observation_json, observation_hash
+            FROM provider_attempts WHERE case_id = ? AND invocation_id = ?
+            ORDER BY attempt_index
+            """,
+            (record.case_id, record.invocation_id),
+        ).fetchall()
+        actual = [(int(row[0]), str(row[1]), str(row[2])) for row in rows]
+        expected = [
+            (attempt.attempt_index, canonical_json(attempt), canonical_sha256(attempt))
+            for attempt in record.attempts
+        ]
+        if actual != expected:
+            raise ValueError("durable provider attempt inventory mismatch")
 
     def _insert_bundle(
         self,
@@ -1459,6 +1781,54 @@ class SQLiteCaseStore(CaseStore):
         ]
         if actual_verdicts != expected_verdicts:
             raise ValueError("durable verdict materialization mismatch")
+
+    def _verify_provider_invocations(
+        self,
+        connection: sqlite3.Connection,
+        case_id: str,
+        events: tuple[AuditEvent, ...],
+    ) -> None:
+        rows = connection.execute(
+            """
+            SELECT case_id, invocation_id, case_revision, reviewer_role, role_action,
+                   request_semantic_hash, status, record_json, record_hash, recorded_at_utc
+            FROM provider_invocations
+            WHERE case_id = ? ORDER BY recorded_at_utc, invocation_id
+            """,
+            (case_id,),
+        ).fetchall()
+        expected_states = {
+            RoleAction.PROPOSE_PROTOCOL: WorkflowState.RESEARCHER_PROTOCOL_PROPOSED,
+            RoleAction.REVIEW_METHODOLOGY: WorkflowState.METHODOLOGY_REVIEWED,
+            RoleAction.REVIEW_STATISTICS: WorkflowState.STATISTICS_REVIEWED,
+            RoleAction.REQUEST_CHALLENGE: WorkflowState.ADVERSARIAL_REVIEWED,
+            RoleAction.REVIEW_REPRODUCIBILITY: WorkflowState.REPRODUCIBILITY_VERIFIED,
+            RoleAction.EXPLAIN_VERDICT: WorkflowState.CHAIR_EXPLANATION,
+        }
+        for row in rows:
+            record = self._decode_provider_invocation(row)
+            self._verify_provider_attempt_rows(connection, record)
+            if record.status is ProviderInvocationStatus.FAILED:
+                continue
+            if record.case_revision >= len(events):
+                raise ValueError("accepted provider invocation lacks its atomic workflow event")
+            event = events[record.case_revision]
+            if (
+                event.sequence != record.case_revision + 1
+                or event.actor is not record.role
+                or event.workflow_state is not expected_states[record.action]
+            ):
+                raise ValueError("accepted provider invocation has a mismatched workflow event")
+            payload: object = event.payload
+            if record.action is RoleAction.REVIEW_REPRODUCIBILITY:
+                if not isinstance(payload, dict):
+                    raise ValueError("provider reproducibility event payload is malformed")
+                payload = payload.get("reproducibility_review")
+            accepted_result = record.accepted_result
+            if accepted_result is None:
+                raise ValueError("accepted provider invocation lacks its durable result")
+            if canonical_sha256(payload) != canonical_sha256(accepted_result.output):
+                raise ValueError("provider output and atomic workflow payload differ")
 
     def _verify_bundle_chain(self, case_id: str) -> None:
         with self._connection() as connection:
