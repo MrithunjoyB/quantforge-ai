@@ -46,7 +46,7 @@ def history_text(root: Path) -> str:
         cwd=root,
         check=True,
         capture_output=True,
-        text=True,
+        encoding="latin-1",
     )
     return result.stdout
 
