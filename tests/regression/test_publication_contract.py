@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from ruamel.yaml import YAML
 from quantforge import __version__
 from quantforge.cli.main import main
 from scripts.check_repository import project_version, validate_repository
+from scripts.check_secrets import history_text
 from scripts.generate_sbom import generate_sbom, write_sbom
 from scripts.inspect_packages import runtime_requirements
 from scripts.release_candidate import ReleaseValidationError, verify_remote_boundary
@@ -21,6 +23,19 @@ def test_pytest_explicitly_targets_the_source_tree() -> None:
     root = Path(__file__).resolve().parents[2]
     configuration = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     assert configuration["tool"]["pytest"]["ini_options"]["pythonpath"] == ["src"]
+
+
+def test_secret_history_scan_preserves_non_utf8_patch_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def completed_process(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del args
+        assert kwargs["encoding"] == "latin-1"
+        return subprocess.CompletedProcess([], 0, "history-\x8a-patch", "")
+
+    monkeypatch.setattr("scripts.check_secrets.shutil.which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr("scripts.check_secrets.subprocess.run", completed_process)
+    assert history_text(tmp_path) == "history-\x8a-patch"
 
 
 def test_wheel_smoke_venv_preserves_posix_shared_library_resolution() -> None:
