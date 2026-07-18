@@ -5,13 +5,15 @@ uses only Python's standard `sqlite3` module. The semantic audit chain remains a
 for constitutions, evidence, graphs, reviews, verdicts, bundles, and exports are constrained
 materializations that are verified against replay.
 
-## Schema 3
+## Schema 4
 
 Schema 1 creates `store_metadata`, `migration_history`, `cases`, `audit_events`, `constitutions`,
 `evidence_bundles`, `bundle_artifacts`, `evidence_records`, `claim_graphs`, `reviewer_outputs`, and
 `verdict_results`. Schema 2 adds immutable `exports` and `export_artifacts` lineage. Schema 3 adds
-the current claim-graph revision and hash anchor to each case. Tables are `STRICT`, foreign keys use
-restrictive deletes, immutable identifiers are primary/unique keys, and reads always specify
+the current claim-graph revision and hash anchor to each case. Schema 4 adds governed
+`provider_invocations` and `provider_attempts`, including a partial unique index that permits only
+one accepted reviewer output for a role/action at a case revision. Tables are `STRICT`, foreign keys
+use restrictive deletes, immutable identifiers are primary/unique keys, and reads always specify
 deterministic ordering.
 
 Each store records a QuantForge application ID, `user_version`, schema version, store ID, UTC
@@ -25,6 +27,11 @@ timestamp. Payloads are JSON only—pickle and executable serialization are forb
 Creation and every append execute in `BEGIN IMMEDIATE` transactions. The expected revision must
 match both the selected case row and the final conditional update. Bundle admission inserts the
 bundle/artifact inventory, evidence materialization, workflow event, and new case revision atomically.
+Provider failures never append events. An accepted provider result and eligible event commit
+together; the Chair transaction also anchors the code-owned final claim graph.
+Accepted and failed records both retain the code-owned provider/model/endpoint/SDK,
+prompt/schema/policy, request/context, retry-policy, case/revision, constitution/amendment, and
+evidence identities; attempt observations remain grouped under that single invocation.
 Foreign keys, full synchronous WAL, bounded busy timeouts, and rollback on exceptions provide local
 crash safety. Case finalization rejects all later events.
 
@@ -42,8 +49,9 @@ best-effort mode.
 
 The replay contract compares exact case schema/state/revision/timestamps/finalization/semantic/audit
 fields; constitution identity/revision/payload; evidence case/bundle/revision/payload; bundle and
-artifact redundant columns; reviewer role/revision/payload; verdict identity/revision/payload; and
-the graph payload plus final-revision anchor. Every `cpp_v1_adapter` evidence row must resolve to its
+artifact redundant columns; reviewer role/revision/payload; verdict identity/revision/payload;
+provider record/attempt hashes and accepted-event relationship; and the graph payload plus
+final-revision anchor. Every `cpp_v1_adapter` evidence row must resolve to its
 exact bundle hash and output artifact. A finalized case requires exactly one current, append-only
 graph materialization anchored at its final case revision.
 

@@ -1,6 +1,13 @@
 """Durable governed-case persistence."""
 
-from quantforge.storage.base import CaseStore, DurableCase, ExportRecord, StoreInspection
+from quantforge.storage.base import (
+    CaseStore,
+    DurableCase,
+    ExportRecord,
+    ProviderInvocationRecord,
+    ProviderInvocationStatus,
+    StoreInspection,
+)
 from quantforge.storage.export import (
     CaseExportResult,
     export_durable_case,
@@ -20,6 +27,8 @@ __all__ = [
     "DurableCase",
     "EvidenceAdmissionResult",
     "ExportRecord",
+    "ProviderInvocationRecord",
+    "ProviderInvocationStatus",
     "SQLiteCaseStore",
     "StoreInspection",
     "admit_engine_evidence",
