@@ -22,11 +22,14 @@ Never include a real credential, private market data, personal data, or propriet
 maintainer will acknowledge the report, reproduce it, assess severity, coordinate a repair and
 regression test, and agree on disclosure timing. No bounty or response-time guarantee is offered.
 
-## Phase 1 threat boundary
+## Current threat boundary
 
-Phase 1 has no network provider, API key, broker, market-data adapter, arbitrary command tool,
-unrestricted role filesystem access, database, or live execution. Serialized cases, evidence, audit
-logs, artifact paths, archives, and future model output are hostile input. See the
+OpenAI provider mode is optional, disabled by default, strictly structured, and has no tools, store,
+engine, evidence-admission, filesystem, shell, SQL, approval, constitution, or verdict authority.
+Credentials come only from the environment or an injected source and are excluded from durable and
+semantic artifacts. There is no broker, market-data adapter, arbitrary command tool, unrestricted
+role filesystem access, or live trading. Serialized cases, evidence, audit logs, artifact paths,
+archives, and model output are hostile input. See the
 [Security Model](docs/SECURITY_MODEL.md) and [Threat Model](docs/THREAT_MODEL.md).
 
 The local audit chain detects partial or accidental tampering but is not signed or externally
