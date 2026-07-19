@@ -421,10 +421,20 @@ def evidence_from_bundle(
     claim_id: str,
     experiment_id: str,
     relationship: EvidenceRelationship = EvidenceRelationship.SUPPORTS,
+    numeric_fact_ids: tuple[str, ...] | None = None,
 ) -> EvidenceObject:
     """Create validated tribunal evidence without reinterpreting engine numeric facts."""
 
-    references = bundle.semantic.numeric_facts
+    allowed = {item.fact_id: item for item in bundle.semantic.numeric_facts}
+    if numeric_fact_ids is None:
+        references = bundle.semantic.numeric_facts
+    else:
+        if not numeric_fact_ids or len(numeric_fact_ids) != len(set(numeric_fact_ids)):
+            raise ValueError("evidence numeric-fact selection must be nonempty and unique")
+        try:
+            references = tuple(allowed[fact_id] for fact_id in numeric_fact_ids)
+        except KeyError as error:
+            raise ValueError("evidence numeric-fact selection is outside the bundle") from error
     source_paths = {item.artifact_path for item in references}
     if len(source_paths) != 1:
         raise ValueError("one evidence object must cite numeric facts from one artifact")

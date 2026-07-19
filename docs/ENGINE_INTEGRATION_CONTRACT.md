@@ -68,5 +68,8 @@ unsupported. `evidence verify` remains a structural integrity operation; `eviden
 rather than offering a weaker fallback.
 
 The C++ engine remains authoritative for numerical values; QuantForge validates and cites those
-values without recalculating or strengthening them. Failed identity, schema, validation, provenance,
+values without recalculating or strengthening them. Decision-relevant facts may span multiple
+validated output artifacts. Admission creates one evidence object per cited source artifact so that
+each fact retains the existing single-artifact evidence boundary; every object remains bound to the
+same verified bundle and atomic ledger transition. Failed identity, schema, validation, provenance,
 or inventory checks fail closed and cannot be repaired by prose.

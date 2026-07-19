@@ -20,6 +20,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
+from quantforge.domain.models import Unit
 from quantforge.engine.base import ApprovedFixtureIdentity, EngineAdapter, EngineRun
 from quantforge.engine.trust import (
     TrustedEngineExecution,
@@ -303,7 +304,7 @@ class LocalCppV1Adapter(EngineAdapter):
             raise ValueError("protected engine repository boundary changed during execution")
         output_root = run_root / "results"
         output_semantics, output_observations = self._inventory_outputs(output_root)
-        fact = self._extract_numeric_fact(output_root)
+        facts = self._extract_numeric_facts(output_root)
         validator_digest = hashlib.sha256(validator.stdout + b"\0" + validator.stderr).hexdigest()
         run = EngineRun(
             run_root=run_root,
@@ -322,7 +323,7 @@ class LocalCppV1Adapter(EngineAdapter):
                     output_sha256=validator_digest,
                 ),
             ),
-            numeric_facts=(fact,),
+            numeric_facts=facts,
             execution_started_at=started_at,
             execution_completed_at=completed_at,
             stdout_sha256=_combined_digest(result.stdout for result in results),
@@ -620,6 +621,8 @@ class LocalCppV1Adapter(EngineAdapter):
         return tuple(semantics), tuple(observations)
 
     def _extract_numeric_fact(self, output_root: Path) -> NumericFactReference:
+        """Retain the Phase 2A single-fact helper for narrow test adapters."""
+
         matches = list(output_root.rglob("portfolio_performance_summary.csv"))
         if len(matches) != 1:
             raise ValueError("approved fixture did not produce one portfolio summary")
@@ -651,6 +654,139 @@ class LocalCppV1Adapter(EngineAdapter):
             unit="fraction",
             methodology_id="causal_daily_v3_stochastic_v2",
         )
+
+    def _extract_numeric_facts(self, output_root: Path) -> tuple[NumericFactReference, ...]:
+        """Admit the approved fixture's decision-relevant performance and inference facts."""
+
+        specifications: tuple[tuple[str, tuple[tuple[str, str, str, Unit], ...]], ...] = (
+            (
+                "portfolio_performance_summary.csv",
+                (
+                    (
+                        "fact_annualized_return",
+                        "annualized return",
+                        "annualized_return",
+                        "fraction",
+                    ),
+                    (
+                        "fact_benchmark_total_return",
+                        "SYN_BENCH total return",
+                        "spy_benchmark_return",
+                        "fraction",
+                    ),
+                    ("fact_excess_return", "benchmark excess return", "excess_return", "fraction"),
+                    ("fact_max_drawdown", "maximum drawdown", "max_drawdown", "fraction"),
+                    ("fact_portfolio_sharpe", "portfolio Sharpe ratio", "sharpe", "ratio"),
+                    (
+                        "fact_portfolio_total_return",
+                        "portfolio total return",
+                        "total_return",
+                        "fraction",
+                    ),
+                    (
+                        "fact_total_transaction_costs",
+                        "total transaction costs",
+                        "total_transaction_costs",
+                        "currency_units",
+                    ),
+                    ("fact_turnover", "portfolio turnover", "turnover", "ratio"),
+                ),
+            ),
+            (
+                "statistics/multiple_testing_summary.csv",
+                (
+                    (
+                        "fact_reality_check_p_value",
+                        "corrected reality-check p-value",
+                        "p_value",
+                        "ratio",
+                    ),
+                ),
+            ),
+            (
+                "statistics/portfolio_policy_robustness.csv",
+                (
+                    (
+                        "fact_probability_loss",
+                        "bootstrap probability of loss",
+                        "probability_loss",
+                        "fraction",
+                    ),
+                    (
+                        "fact_probability_positive_active",
+                        "bootstrap probability of positive active return",
+                        "probability_positive_active",
+                        "fraction",
+                    ),
+                    (
+                        "fact_return_lower_95",
+                        "bootstrap return lower bound",
+                        "return_lower",
+                        "fraction",
+                    ),
+                    (
+                        "fact_return_upper_95",
+                        "bootstrap return upper bound",
+                        "return_upper",
+                        "fraction",
+                    ),
+                    (
+                        "fact_sharpe_lower_95",
+                        "bootstrap Sharpe lower bound",
+                        "sharpe_lower",
+                        "ratio",
+                    ),
+                    (
+                        "fact_sharpe_upper_95",
+                        "bootstrap Sharpe upper bound",
+                        "sharpe_upper",
+                        "ratio",
+                    ),
+                ),
+            ),
+            (
+                "attribution/portfolio_attribution_summary.csv",
+                (
+                    (
+                        "fact_crypto_profit_share",
+                        "SYN_CRYPTO share of net profit",
+                        "percentage_of_net_profit",
+                        "fraction",
+                    ),
+                ),
+            ),
+        )
+        facts: list[NumericFactReference] = []
+        for suffix, fields in specifications:
+            matches = [
+                path
+                for path in output_root.rglob(Path(suffix).name)
+                if path.as_posix().endswith(suffix)
+            ]
+            if len(matches) != 1:
+                raise ValueError(f"approved fixture did not produce one {suffix}")
+            path = matches[0]
+            relative = path.relative_to(output_root).as_posix()
+            rows = _read_csv_rows(path, description=suffix)
+            selected_row = (
+                _select_csv_row(rows, "component", "SYN_CRYPTO", description=suffix)
+                if suffix.endswith("portfolio_attribution_summary.csv")
+                else _require_single_csv_row(rows, description=suffix)
+            )
+            row_index = rows.index(selected_row)
+            for fact_id, name, column, unit in fields:
+                facts.append(
+                    NumericFactReference(
+                        fact_id=fact_id,
+                        name=name,
+                        artifact_path=relative,
+                        structured_location=f"/rows/{row_index}/{column}",
+                        value=_decimal_csv_value(selected_row, column, description=suffix),
+                        unit=unit,
+                        methodology_id="causal_daily_v3_stochastic_v2",
+                    )
+                )
+        return tuple(sorted(facts, key=lambda fact: fact.fact_id))
 
     def _validate_repository_root(self) -> None:
         reject_symlink_components(self._repository)
@@ -839,6 +975,50 @@ def _validate_output_artifact(path: Path) -> str:
     if len(versions) != 1 or not versions.issubset({"1", "2", "3"}):
         raise ValueError("engine CSV uses a mixed or unknown schema version")
     return next(iter(versions))
+
+
+def _read_csv_rows(path: Path, *, description: str) -> list[dict[str, str]]:
+    try:
+        with path.open(encoding="utf-8", newline="") as stream:
+            reader = csv.DictReader(stream, strict=True)
+            if reader.fieldnames is None or len(reader.fieldnames) != len(set(reader.fieldnames)):
+                raise ValueError(f"{description} has missing or duplicate headers")
+            rows: list[dict[str, str]] = []
+            for row in reader:
+                if None in row or any(value is None for value in row.values()):
+                    raise ValueError(f"{description} contains a malformed row")
+                rows.append({key: value for key, value in row.items() if key is not None})
+            return rows
+    except (csv.Error, UnicodeError) as error:
+        raise ValueError(f"{description} CSV is malformed") from error
+
+
+def _require_single_csv_row(rows: list[dict[str, str]], *, description: str) -> dict[str, str]:
+    if len(rows) != 1:
+        raise ValueError(f"{description} must contain exactly one row")
+    return rows[0]
+
+
+def _select_csv_row(
+    rows: list[dict[str, str]],
+    column: str,
+    expected: str,
+    *,
+    description: str,
+) -> dict[str, str]:
+    matches = [row for row in rows if row.get(column) == expected]
+    if len(matches) != 1:
+        raise ValueError(f"{description} lacks one unambiguous {expected} row")
+    return matches[0]
+
+
+def _decimal_csv_value(row: dict[str, str], column: str, *, description: str) -> Decimal:
+    try:
+        value = Decimal(row[column])
+        canonical_decimal(value)
+        return value
+    except (InvalidOperation, KeyError, ValueError) as error:
+        raise ValueError(f"{description} numeric field is malformed: {column}") from error
 
 
 def _read_engine_json(path: Path) -> Any:

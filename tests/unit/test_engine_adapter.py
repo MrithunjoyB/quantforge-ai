@@ -115,6 +115,9 @@ class FixtureAdapter(ReleaseFixtureAdapter):
             ignored_inventory_sha256=digest,
         )
 
+    def _extract_numeric_facts(self, output_root: Path) -> tuple[Any, ...]:
+        return (self._extract_numeric_fact(output_root),)
+
 
 class HostileFixtureAdapter(FixtureAdapter):
     def __init__(
@@ -234,7 +237,28 @@ elif command == "run" and "--dry-run" not in sys.argv:
     output = pathlib.Path("results/fixture")
     output.mkdir(parents=True)
     (output / "portfolio_performance_summary.csv").write_text(
-        "schema_version,total_return\\n3,0.125\\n", encoding="utf-8"
+        "schema_version,total_return,spy_benchmark_return,excess_return,annualized_return,"
+        "sharpe,max_drawdown,turnover,total_transaction_costs\\n"
+        "3,0.125,0.05,0.075,0.02,0.4,-0.2,1.5,125\\n",
+        encoding="utf-8",
+    )
+    statistics = output / "statistics"
+    statistics.mkdir()
+    (statistics / "multiple_testing_summary.csv").write_text(
+        "schema_version,p_value\\n3,0.30\\n", encoding="utf-8"
+    )
+    (statistics / "portfolio_policy_robustness.csv").write_text(
+        "schema_version,probability_loss,probability_positive_active,return_lower,"
+        "return_upper,sharpe_lower,sharpe_upper\\n"
+        "3,0.25,0.65,-0.8,2.0,-1.0,2.4\\n",
+        encoding="utf-8",
+    )
+    attribution = output / "attribution"
+    attribution.mkdir()
+    (attribution / "portfolio_attribution_summary.csv").write_text(
+        "schema_version,component,percentage_of_net_profit\\n"
+        "3,SYN_CRYPTO,0.50\\n3,PORTFOLIO_RETURN,1.0\\n",
+        encoding="utf-8",
     )
     (output / "run_metadata.json").write_text(
         json.dumps({{"result_schema_version": 2, "run_timestamp_utc": "now"}}) + "\\n",
@@ -314,9 +338,13 @@ def test_fixture_execution_uses_only_allowlisted_argv_and_isolated_outputs(
     assert run.configuration_sha256 == _sha256(run.run_root / APPROVED_CONFIG)
     assert len(run.input_semantics) == len(APPROVED_INPUTS)
     assert [item.path for item in run.output_semantics] == [
+        "fixture/attribution/portfolio_attribution_summary.csv",
         "fixture/portfolio_performance_summary.csv",
         "fixture/run_metadata.json",
+        "fixture/statistics/multiple_testing_summary.csv",
+        "fixture/statistics/portfolio_policy_robustness.csv",
     ]
+    assert len(run.numeric_facts) == 1
     assert run.numeric_facts[0].value.is_finite()
     exponent = run.numeric_facts[0].value.as_tuple().exponent
     assert isinstance(exponent, int) and exponent < 0
