@@ -13,7 +13,9 @@ system.
   hardware-backed keys, or an external tamper anchor. Operators own permissions and backups.
 - HMAC signing exists for tests only. There is no production signing key, PKI, transparency log, or
   trusted timestamp service.
-- There is no live OpenAI or other model provider. Structured provider integration is a later phase.
+- The flagship governed demo uses deterministic mock output only. The optional official structured
+  provider surface is not called or live-verified by the demo; live verification requires separate
+  operator authorization and credentials.
 - Trusted engine admission is same-process only. Delayed and cross-process bundle admission are
   deliberately unsupported; standalone verification does not establish execution authenticity.
 - There is no external market-data ingestion, retrieval service, web UI, dashboard, vector store,

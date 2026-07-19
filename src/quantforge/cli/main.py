@@ -13,6 +13,8 @@ from pydantic import ValidationError
 
 from quantforge import __version__
 from quantforge.audit import AuditLog
+from quantforge.demo import run_governed_tribunal_demo, verify_governed_tribunal_demo
+from quantforge.demo.tribunal import terminal_summary
 from quantforge.domain.models import TribunalCase, WorkflowState
 from quantforge.engine import LocalCppV1Adapter
 from quantforge.evidence.bundle import (
@@ -134,6 +136,14 @@ def _build_parser() -> argparse.ArgumentParser:
         evidence_command.add_argument("--artifact-root", type=Path, required=True)
         if name == "admit":
             evidence_command.add_argument("--evidence-id", required=True)
+
+    governed_demo = commands.add_parser("demo")
+    governed_demo_commands = governed_demo.add_subparsers(dest="demo_command", required=True)
+    run_governed_demo = governed_demo_commands.add_parser("run")
+    _add_engine_arguments(run_governed_demo)
+    run_governed_demo.add_argument("--output-dir", type=Path, required=True)
+    verify_governed_demo = governed_demo_commands.add_parser("verify")
+    verify_governed_demo.add_argument("artifact_dir", type=Path)
     return parser
 
 
@@ -388,6 +398,17 @@ def _handle_evidence(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_demo(args: argparse.Namespace) -> int:
+    if args.demo_command == "verify":
+        print(canonical_json(verify_governed_tribunal_demo(args.artifact_dir)))
+        return 0
+    result = run_governed_tribunal_demo(_adapter(args), args.output_dir)
+    print(terminal_summary(result))
+    print(f"Artifacts: {args.output_dir.absolute()}")
+    print(f"Independent verification: quantforge demo verify {args.output_dir.absolute()}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -400,6 +421,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _handle_engine(args)
         if args.command == "evidence":
             return _handle_evidence(args)
+        if args.command == "demo":
+            return _handle_demo(args)
         if args.command == "audit" and args.audit_command == "verify":
             log = AuditLog.read_jsonl(args.audit_file)
             print(canonical_json({"events": len(log.events), "valid": True}))
