@@ -16,8 +16,32 @@ pure policy compute the strongest defensible verdict.
 This repository contains the independently audited **Phase 1 governance foundation** and the Phase
 2A durable local case store plus research-only C++ v1.0.0 evidence adapter. The first bounded Phase
 2B stage adds an optional official OpenAI strict-structured provider and six governed role contracts.
-Version `v0.1.0` remains the immutable Phase 1 release. Roles may propose or explain, but code owns
-workflow state, evidence validity, human approval, constitutions, and verdict strength.
+Version `v0.1.0` remains the immutable Phase 1 release. The Phase 2B2 flagship demonstration runs
+the six governed role contracts through genuine C++ evidence admission, durable reconstruction, and
+an independently verifiable artifact set. Roles may propose or explain, but code owns workflow
+state, evidence validity, human approval, constitutions, and verdict strength.
+
+## Flagship governed tribunal demonstration
+
+The professional offline case starts with an attractive synthetic performance claim and then shows
+why it remains `INCONCLUSIVE`: corrected inference, drawdown, loss probability, concentration, and
+regime objections outweigh the headline return. It uses the deterministic mock provider through the
+real Phase 2B contracts and the protected C++ `v1.0.0` execute-and-admit path. It performs no network
+or live-model call.
+
+```bash
+.venv/bin/quantforge demo run \
+  --repository /absolute/path/to/cpp-event-driven-backtester \
+  --executable /absolute/outside/build/directory/quant_cli \
+  --expected-executable-sha256 <reviewed-64-character-sha256> \
+  --work-root /private/tmp \
+  --output-dir /private/tmp/quantforge-governed-tribunal
+.venv/bin/quantforge demo verify /private/tmp/quantforge-governed-tribunal
+```
+
+The exact digest command, platform notes, runtime, evidence interpretation, artifact inventory, and
+offline-versus-live boundary are in the
+[governed tribunal demo runbook](docs/GOVERNED_TRIBUNAL_DEMO.md).
 
 After the locked development environment is installed, the exact offline demo command is:
 
@@ -102,6 +126,7 @@ remains human-directed, reviewed, and maintained by Mrithunjoy Basumatary. AI sy
 project authors or copyright holders.
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Offline governed tribunal demonstration](docs/GOVERNED_TRIBUNAL_DEMO.md)
 - [Phase 2B structured provider contract](docs/PHASE_2B_PROVIDER_CONTRACT.md)
 - [Six governed role contracts](docs/ROLE_CONTRACTS.md)
 - [OpenAI provider runbook](docs/OPENAI_PROVIDER_RUNBOOK.md)

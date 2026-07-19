@@ -86,7 +86,7 @@ class FixtureEvidence(StrictModel):
 
 class ScenarioFixture(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
-    name: Literal["provisional", "fragile", "inconclusive"]
+    name: Literal["provisional", "fragile", "inconclusive", "governed_tribunal"]
     claim_statement: NarrativeText
     methodology_decision: ReviewDecision
     corrected_inference: CorrectedInference
@@ -113,7 +113,7 @@ class ScenarioFixture(StrictModel):
 
 
 def load_scenario(name: str) -> ScenarioFixture:
-    if name not in {"provisional", "fragile", "inconclusive"}:
+    if name not in {"provisional", "fragile", "inconclusive", "governed_tribunal"}:
         raise ValueError("unknown synthetic demo scenario")
     fixture = resources.files("quantforge.adapters.fixtures").joinpath(f"{name}.json")
     return ScenarioFixture.model_validate_json(fixture.read_text(encoding="utf-8"))
@@ -488,14 +488,19 @@ class MockRoleProvider:
             references = self._request_evidence_references(request)
             initial_adversarial = self.review_adversarially(cast(TribunalCase, object())).output
             challenges = tuple(
-                challenge.model_copy(update={"evidence_references": references[:1]})
+                challenge.model_copy(update={"evidence_references": references})
                 for challenge in initial_adversarial.challenges
+            )
+            findings = tuple(
+                finding.model_copy(update={"evidence_references": references})
+                for finding in initial_adversarial.findings
             )
             adversarial_output = initial_adversarial.model_copy(
                 update={
                     "review_id": request.expected_output_id,
                     "reviewed_at": request.effective_at,
                     "challenges": challenges,
+                    "findings": findings,
                 }
             )
             return self._result(

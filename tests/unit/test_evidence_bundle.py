@@ -180,6 +180,40 @@ def test_bundle_verifies_and_converts_without_reinterpreting_numeric_fact(
     assert evidence.validation_method == "cpp_v1_release_validators"
 
 
+def test_evidence_fact_selection_is_nonempty_known_unique_and_source_bound(
+    tmp_path: Path,
+) -> None:
+    bundle, _, _ = _bundle_fixture(tmp_path)
+    arguments = {
+        "evidence_id": "evidence_selected",
+        "claim_id": "claim_test",
+        "experiment_id": "experiment_test",
+    }
+    for selection in ((), ("fact_return", "fact_return")):
+        with pytest.raises(ValueError, match="nonempty and unique"):
+            evidence_from_bundle(bundle, numeric_fact_ids=selection, **arguments)
+    with pytest.raises(ValueError, match="outside the bundle"):
+        evidence_from_bundle(bundle, numeric_fact_ids=("fact_unknown",), **arguments)
+
+    second = bundle.semantic.numeric_facts[0].model_copy(
+        update={
+            "fact_id": "fact_metadata",
+            "artifact_path": "metadata.json",
+            "structured_location": "/rows/0/value",
+        }
+    )
+    semantic = bundle.semantic.model_copy(
+        update={"numeric_facts": (*bundle.semantic.numeric_facts, second)}
+    )
+    multiple_sources = EvidenceBundle.create(semantic, bundle.observations)
+    with pytest.raises(ValueError, match="one artifact"):
+        evidence_from_bundle(
+            multiple_sources,
+            numeric_fact_ids=("fact_return", "fact_metadata"),
+            **arguments,
+        )
+
+
 def test_hashes_bind_semantics_observations_and_signature(tmp_path: Path) -> None:
     signer = HmacSha256TestSigner(
         signer_id="signer_test", secret=b"0123456789abcdef0123456789abcdef"

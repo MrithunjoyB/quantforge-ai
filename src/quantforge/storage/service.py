@@ -9,6 +9,7 @@ from pathlib import Path
 from quantforge.audit import AuditLog
 from quantforge.domain.models import EvidenceObject, RoleName, WorkflowState
 from quantforge.engine.base import EngineAdapter
+from quantforge.engine.trust import TrustedReceiptRecord
 from quantforge.evidence.bundle import (
     GENESIS_BUNDLE_HASH,
     BundleSigner,
@@ -29,6 +30,8 @@ from quantforge.workflow.machine import StateMachine
 class EvidenceAdmissionResult:
     bundle: EvidenceBundle
     evidence: EvidenceObject
+    evidence_items: tuple[EvidenceObject, ...]
+    trusted_receipt: TrustedReceiptRecord
     durable_case: DurableCase
 
 
@@ -80,6 +83,7 @@ def execute_and_admit_engine_evidence(
     case_id: str,
     evidence_id: str,
     signer: BundleSigner | None = None,
+    admitted_at: datetime | None = None,
 ) -> EvidenceAdmissionResult:
     """Execute, independently validate, construct, verify, and atomically admit in-process."""
 
@@ -102,11 +106,21 @@ def execute_and_admit_engine_evidence(
         amendment_chain_hash=chain_hash,
     )
     run = execution.run
-    admitted_at = datetime.now(UTC)
+    effective_admitted_at = admitted_at or datetime.now(UTC)
+    if effective_admitted_at < run.execution_completed_at:
+        raise ValueError("evidence admission time precedes trusted execution completion")
     bundle_identity = {
         "case_id": case.case_id,
+        "configuration_sha256": run.configuration_sha256,
+        "constitution_hash": case.constitution.constitution_hash,
+        "engine": run.engine,
+        "input_artifacts": run.input_semantics,
+        "invocation": run.invocation,
+        "numeric_facts": run.numeric_facts,
+        "output_artifacts": run.output_semantics,
+        "previous_bundle_hash": GENESIS_BUNDLE_HASH,
         "revision": durable.revision,
-        "run": execution.receipt.record.run_fingerprint,
+        "validator_results": run.validators,
     }
     bundle_id = f"bundle_{canonical_sha256(bundle_identity)[:32]}"
     bundle = run.evidence_bundle(
@@ -117,7 +131,7 @@ def execute_and_admit_engine_evidence(
         constitution_hash=case.constitution.constitution_hash,
         amendment_chain_hash=chain_hash,
         previous_bundle_hash=GENESIS_BUNDLE_HASH,
-        admitted_at=admitted_at,
+        admitted_at=effective_admitted_at,
         signer=signer,
     )
     context = EvidenceAdmissionContext(
@@ -131,23 +145,46 @@ def execute_and_admit_engine_evidence(
         input_artifacts=run.input_semantics,
         input_artifact_observations=run.input_observations,
         previous_bundle_hash=GENESIS_BUNDLE_HASH,
-        now=admitted_at,
+        now=effective_admitted_at,
     )
     verify_evidence_bundle(bundle, context, run.output_root, signer=signer)
-    evidence = evidence_from_bundle(
-        bundle,
-        evidence_id=evidence_id,
-        claim_id=case.claim.claim_id,
-        experiment_id=case.proposal.experiment_id,
+    fact_ids_by_artifact: dict[str, list[str]] = {}
+    for fact in bundle.semantic.numeric_facts:
+        fact_ids_by_artifact.setdefault(fact.artifact_path, []).append(fact.fact_id)
+    evidence_items: list[EvidenceObject] = []
+    for artifact_path, fact_ids in sorted(fact_ids_by_artifact.items()):
+        derived_id = (
+            evidence_id
+            if len(fact_ids_by_artifact) == 1
+            else f"{evidence_id[:96]}_{canonical_sha256(artifact_path)[:16]}"
+        )
+        item = evidence_from_bundle(
+            bundle,
+            evidence_id=derived_id,
+            claim_id=case.claim.claim_id,
+            experiment_id=case.proposal.experiment_id,
+            numeric_fact_ids=tuple(sorted(fact_ids)),
+        )
+        verify_source_artifact(item, run.output_root, max_bytes=16 * 1024 * 1024)
+        evidence_items.append(item)
+    if not evidence_items:
+        raise ValueError("trusted engine bundle contains no admissible evidence groups")
+    evidence = next(
+        (
+            item
+            for item in evidence_items
+            if item.source_artifact.endswith("portfolio_performance_summary.csv")
+        ),
+        evidence_items[0],
     )
-    verify_source_artifact(evidence, run.output_root, max_bytes=16 * 1024 * 1024)
     ledger = EvidenceLedger(
         case_id=case.case_id,
         experiment_id=case.proposal.experiment_id,
         constitution_hash=case.constitution.constitution_hash,
         claim_ids={case.claim.claim_id},
     )
-    ledger.append(evidence)
+    for item in evidence_items:
+        ledger.append(item)
     machine = StateMachine(case, durable.audit_log)
     machine.advance(
         WorkflowState.EXPERIMENT_EXECUTED,
@@ -155,7 +192,7 @@ def execute_and_admit_engine_evidence(
         action="admit_engine_evidence",
         timestamp=bundle.observations.admitted_at,
         payload=ledger.snapshot(),
-        updates={"evidence_ids": (evidence.evidence_id,)},
+        updates={"evidence_ids": tuple(item.evidence_id for item in evidence_items)},
     )
     event = machine.audit_log.events[-1]
     receipt_record = execution.receipt.record
@@ -175,6 +212,8 @@ def execute_and_admit_engine_evidence(
     return EvidenceAdmissionResult(
         bundle=bundle,
         evidence=evidence,
+        evidence_items=tuple(evidence_items),
+        trusted_receipt=receipt_record,
         durable_case=store.reconstruct(case.case_id, require_complete=False),
     )
 

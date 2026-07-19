@@ -49,7 +49,9 @@ def inspect_wheel(wheel: Path, version: str) -> dict[str, Any]:
         required_package = {
             "quantforge/__init__.py",
             "quantforge/_version.py",
+            "quantforge/adapters/fixtures/governed_tribunal.json",
             "quantforge/cli/main.py",
+            "quantforge/demo/tribunal.py",
             "quantforge/workflow/demo.py",
         }
         missing_package = sorted(required_package - set(names))

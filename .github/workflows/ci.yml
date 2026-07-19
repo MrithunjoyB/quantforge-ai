@@ -127,14 +127,34 @@ jobs:
       - name: Build the immutable C++ release target
         working-directory: cpp-engine
         run: >-
-          cmake -S . -B build
+          cmake -S . -B "${{ runner.temp }}/cpp-v1-build"
           -DCMAKE_BUILD_TYPE=Release
           -DQUANT_ENABLE_STRICT_WARNINGS=ON
-          && cmake --build build --parallel 2
+          && cmake --build "${{ runner.temp }}/cpp-v1-build" --parallel 2
       - name: Exercise the read-only release adapter twice
         working-directory: quantforge-ai
         run: python -m pytest -q tests/integration/test_cpp_v1_adapter.py
         env:
-          QUANTFORGE_CPP_V1_EXECUTABLE: ${{ github.workspace }}/cpp-engine/build/quant_cli
+          QUANTFORGE_CPP_V1_EXECUTABLE: ${{ runner.temp }}/cpp-v1-build/quant_cli
           QUANTFORGE_CPP_V1_REPOSITORY: ${{ github.workspace }}/cpp-engine
           QUANTFORGE_CPP_V1_WORK_ROOT: ${{ runner.temp }}
+      - name: Build and inspect the governed demonstration distributions
+        working-directory: quantforge-ai
+        run: >-
+          python -m build --no-isolation
+          && python -m scripts.inspect_packages --dist-dir dist
+      - name: Run the governed tribunal from installed wheel and sdist
+        working-directory: quantforge-ai
+        shell: bash
+        run: |
+          QF_EXECUTABLE_SHA256="$(python -c 'import hashlib, pathlib; print(hashlib.sha256(pathlib.Path("${{ runner.temp }}/cpp-v1-build/quant_cli").read_bytes()).hexdigest())')"
+          python -m scripts.demo_package_smoke \
+            --wheel dist/quantforge_ai-0.1.0-py3-none-any.whl \
+            --sdist dist/quantforge_ai-0.1.0.tar.gz \
+            --repository "${{ github.workspace }}/cpp-engine" \
+            --executable "${{ runner.temp }}/cpp-v1-build/quant_cli" \
+            --expected-executable-sha256 "${QF_EXECUTABLE_SHA256}" \
+            --engine-work-root "${{ runner.temp }}" \
+            --build-requirements-lock requirements-dev.lock \
+            --requirements-lock requirements.lock \
+            --work-dir "${{ runner.temp }}/governed-distribution-smoke"
