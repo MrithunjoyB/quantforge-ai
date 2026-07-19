@@ -13,6 +13,7 @@ from quantforge import __version__
 from quantforge.cli.main import main
 from scripts.check_repository import project_version, validate_repository
 from scripts.check_secrets import history_text
+from scripts.demo_package_smoke import distribution_environment_builder
 from scripts.generate_sbom import generate_sbom, write_sbom
 from scripts.inspect_packages import runtime_requirements
 from scripts.release_candidate import ReleaseValidationError, verify_remote_boundary
@@ -41,6 +42,13 @@ def test_secret_history_scan_preserves_non_utf8_patch_bytes(
 def test_wheel_smoke_venv_preserves_posix_shared_library_resolution() -> None:
     builder = runtime_environment_builder()
     assert builder.with_pip is True
+    assert builder.symlinks is (os.name != "nt")
+
+
+def test_governed_distribution_smoke_isolated_install_environment() -> None:
+    builder = distribution_environment_builder()
+    assert builder.with_pip is True
+    assert builder.system_site_packages is True
     assert builder.symlinks is (os.name != "nt")
 
 

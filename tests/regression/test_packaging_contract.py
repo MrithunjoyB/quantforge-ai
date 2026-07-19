@@ -38,6 +38,7 @@ def test_synthetic_package_fixtures_are_declared_resources() -> None:
     fixture_root = Path(__file__).resolve().parents[2] / "src/quantforge/adapters/fixtures"
     assert {path.name for path in fixture_root.glob("*.json")} == {
         "fragile.json",
+        "governed_tribunal.json",
         "inconclusive.json",
         "provisional.json",
     }
