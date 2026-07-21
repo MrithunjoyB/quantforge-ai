@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "phase": "2B.3",
+  "evaluation_label": "OFFLINE DETERMINISTIC EVALUATION — MOCK PROVIDER",
+  "baseline": {
+    "quantforge_main": "8674c1a65f18d4160e544672d73d17d74ce2fa3c",
+    "cpp_repository_commit": "f6ae42da9d80cbacfc722c6d7ea28e3d0206aa9c",
+    "cpp_release": "v1.0.0",
+    "cpp_release_immutable_flag": false,
+    "cpp_release_verified_public_unchanged": true,
+    "quantforge_release": "v0.1.0",
+    "quantforge_release_immutable_flag": true
+  },
+  "suite": {
+    "suite_id": "quantforge-comparative-evaluation",
+    "suite_version": "1.0.0",
+    "case_count": 24,
+    "judge_case_count": 7,
+    "resource_sha256": {
+      "cases.json": "116a3d64b84597305d1eeb789117f608621bdcbcd3c3e66c91eef6cf17e53933",
+      "ground-truth.json": "88d262bb9e65366bb8ca970adfdc34d83f353ff73798bba525e00a8c98d09364",
+      "judge-subset.json": "03375306f269f4223aa19ab04a44ef538979344638dfce6d7760e4d610de54fd",
+      "manifest.json": "f312320eebdef1d6dbd532ff249f7b6bfb41aa5a46b46d0ca2d221e6af3cf068",
+      "mock-responses.json": "9097f535d41dd18d14a6243bfd157f0ef4b35662debe9fb35c896df1247c3183"
+    },
+    "suite_semantic_sha256": "78b67143e87158cb4ab9bdb4ca350e6118de1e4419e630f574852e48f1a0131e"
+  },
+  "architectures": [
+    "single_agent",
+    "planner_reviewer",
+    "quantforge_tribunal"
+  ],
+  "generated_run_evidence": {
+    "tracked_in_repository": false,
+    "reason": "Run artifacts are generated into an operator-selected untracked directory and verified under a closed export manifest.",
+    "command": "quantforge evaluation compare --subset full --output-dir <new-empty-directory>",
+    "verification": "quantforge evaluation verify-export <directory>",
+    "replay": "quantforge evaluation replay <directory>",
+    "verified_reference": {
+      "run_id": "evaluation_07476d15c9236898f93f84d2",
+      "run_semantic_sha256": "d53accf7c8b7e74d54b1d69a5001e04a642a4022136bf6b34521e5928d03ba9c",
+      "export_id": "evaluation_export_c647c9ea42119ddb4f8a",
+      "result_count": 72,
+      "score_count": 72,
+      "duplicate_transition_count": 0,
+      "durable_advancement_created_by_replay": false,
+      "two_exports_byte_identical": true,
+      "artifact_sha256": {
+        "benchmark-inventory.json": "8b7d9da2ddb9f521e793bb7addd92b9e8a474eb2c369c85f86f7d2eca1963ead",
+        "comparison-report.json": "75a53df7e43d841b279c1d931b158ca05c2c1c71a532371b37107198bea46771",
+        "comparison-report.md": "9b6c57d8b38e61378e14e660b3ad403e9184ec62e5325a4b3362719d77315489",
+        "evidence-manifest.json": "8bda70cf25f84e19e6dc7b860355b8f920b8d9f78adca5f5b924631cb30e937d",
+        "export-manifest.json": "51c91e626aa05c429c492968ef8c0affe4c07772a76ddb80b613015974f624fc"
+      }
+    }
+  },
+  "live_calls_executed": 0,
+  "interpretation": "Offline fixture results validate harness conformance and authority enforcement, not live model quality or global competitiveness."
+}

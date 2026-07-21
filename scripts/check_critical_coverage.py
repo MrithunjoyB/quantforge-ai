@@ -13,6 +13,7 @@ CRITICAL_ROOTS: Final = (
     "src/quantforge/cli/",
     "src/quantforge/domain/",
     "src/quantforge/engine/",
+    "src/quantforge/evaluation/",
     "src/quantforge/evidence/",
     "src/quantforge/providers/",
     "src/quantforge/roles/",

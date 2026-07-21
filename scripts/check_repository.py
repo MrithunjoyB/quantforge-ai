@@ -35,6 +35,10 @@ REQUIRED_PUBLICATION_FILES = {
     "SUPPORT.md",
     "docs/RELEASE_POLICY.md",
     "docs/RELEASE_NOTES_v0.1.0.md",
+    "docs/EVALUATION_METHODOLOGY.md",
+    "docs/LIVE_EVALUATION_RUNBOOK.md",
+    "docs/PHASE_2B3_EVIDENCE_MANIFEST.json",
+    "docs/PHASE_2B3_REQUIREMENT_MAP.md",
     "audit/phase1_independent_audit.json",
     "audit/phase1_independent_audit.md",
 }

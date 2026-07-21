@@ -8,6 +8,14 @@ policy versions remain independently governed.
 
 ### Added
 
+- Add a closed, versioned 24-case quantitative-research benchmark and seven-case judge subset with
+  separate public inputs, code-owned ground truth, deterministic provider fixtures, and semantic and
+  provenance hashes.
+- Add fair single-agent and planner–reviewer baselines plus a real six-role QuantForge evaluation
+  adapter, exact component scoring, deterministic repeat evidence, and closed report export,
+  independent verification, and replay commands.
+- Add offline comparison CLI commands and fail-closed future-live planning, model/call/cost approval,
+  six-call receipt, budget-exhaustion, checkpoint, and result-namespace controls.
 - Add a backend-neutral durable case-store contract, crash-safe SQLite backend, forward-only
   checksummed migrations, historical fixture, deterministic reconstruction, and export lineage.
 - Add a read-only adapter for the exact protected C++ v1.0.0 public synthetic fixture and canonical
@@ -17,6 +25,9 @@ policy versions remain independently governed.
 
 ### Security
 
+- Structurally exclude benchmark ground truth from provider-accessible case models, reject foreign
+  evidence and identity substitution, independently recompute exported scores and metrics, and add
+  the complete evaluation namespace to the 90% governance-critical branch-coverage gate.
 - Bind engine evidence to release, executable, invocation, configuration, inputs, complete outputs,
   validators, methodology, case, workflow revision, constitution, amendments, and bundle lineage.
 - Reject injection, stale writers, schema tampering, path/symlink attacks, substitution, malformed or
@@ -24,6 +35,9 @@ policy versions remain independently governed.
 
 ### Limitations
 
+- Comparative results are offline deterministic mock-provider conformance evidence, not live-model
+  quality, global competitiveness, cost, or latency evidence. Live comparative transport remains
+  disabled pending separate official-OpenAI verification and reviewed activation.
 - The adapter is research-only, read-only, and limited to one public synthetic fixture. Live
   providers, market data, brokers, orders, live trading, investment advice, and profitability claims
   remain out of scope.

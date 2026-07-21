@@ -14,7 +14,10 @@ QuantForge is a deterministic, offline research tribunal arranged as inward-faci
    reconstruction, and deterministic package export.
 9. `engine` owns the narrow read-only adapter contract for the protected C++ release.
 10. `adapters` contains package-owned mock roles and synthetic evidence only.
-11. `cli` exposes bounded offline operations; it is not an arbitrary process or filesystem API.
+11. `evaluation` owns closed benchmark resources, public-only provider requests, fair advisory
+    baselines, the real-tribunal adapter, deterministic component scoring, verified exports, and a
+    fail-closed future-live control plane.
+12. `cli` exposes bounded offline operations; it is not an arbitrary process or filesystem API.
 
 ## Authority boundary
 
@@ -51,3 +54,15 @@ from observational request IDs, timing, usage, retries, and transport metadata. 
 hashes enter verdict inputs; observational-only changes do not. Providers receive no state machine,
 filesystem, shell, engine, evidence-admission, graph, verdict-policy, broker, order, or trading
 authority.
+
+The evaluation baselines have no reference to the case store, engine adapter, evidence ledger,
+human approval factory, constitution factory, state machine, or verdict policy. The tribunal
+evaluation path uses those real components rather than an evaluation-only facsimile. Controlled
+benchmark evidence is explicitly untrusted synthetic fixture material and never becomes C++
+authority. Ground truth is joined only by the code-owned loader/scorer; providers receive a smaller
+public model with no expected labels or scoring fields.
+
+Evaluation result hashes bind semantic request and output identities while excluding observational
+request IDs, timing, token counts, and cost. Full observations remain exportable. Closed export
+verification reloads the active suite and independently reconstructs scores, aggregate metrics,
+human reporting, benchmark inventory, and evidence manifest before accepting replay identities.
