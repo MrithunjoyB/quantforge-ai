@@ -10,7 +10,7 @@ import pytest
 from scripts.check_critical_coverage import CRITICAL_FILES, CRITICAL_ROOTS
 
 
-@pytest.mark.parametrize("undercovered_root", ["engine", "storage"])
+@pytest.mark.parametrize("undercovered_root", ["engine", "evaluation", "storage"])
 def test_critical_coverage_command_fails_for_omitted_boundary_paths(
     tmp_path: Path, undercovered_root: str
 ) -> None:
