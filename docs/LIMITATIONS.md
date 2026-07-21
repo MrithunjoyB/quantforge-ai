@@ -16,6 +16,16 @@ system.
 - The flagship governed demo uses deterministic mock output only. The optional official structured
   provider surface is not called or live-verified by the demo; live verification requires separate
   operator authorization and credentials.
+- The Phase 2B.3 comparative suite also uses deterministic mock output. Its perfect expected fixture
+  routing is a harness-conformance result, not evidence about model intelligence, reasoning,
+  provider refusal behavior, structured-output reliability, token cost, latency, or general quality.
+- The 24 synthetic cases are curated and heterogeneous, with one clean control; they do not support
+  population confidence intervals, global ranking, or a claim that QuantForge is broadly superior.
+- Live comparative transport is not executed or exposed by Phase 2B.3. The fail-closed plan,
+  authorization, six-call receipt, call budget, cost cap, checkpoint, and result-namespace controls
+  require a separately reviewed activation using the existing official OpenAI provider.
+- Mock and live quality metrics are separate populations and cannot be compared as equivalent.
+  Global competitiveness requires later live evaluation and external reproduction.
 - Trusted engine admission is same-process only. Delayed and cross-process bundle admission are
   deliberately unsupported; standalone verification does not establish execution authenticity.
 - There is no external market-data ingestion, retrieval service, web UI, dashboard, vector store,

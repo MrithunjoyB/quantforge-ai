@@ -21,6 +21,37 @@ the six governed role contracts through genuine C++ evidence admission, durable 
 an independently verifiable artifact set. Roles may propose or explain, but code owns workflow
 state, evidence validity, human approval, constitutions, and verdict strength.
 
+Phase 2B.3 adds a versioned 24-case comparative-evaluation foundation for a single-agent baseline,
+a planner–reviewer baseline, and the real QuantForge tribunal. All current comparative results are
+**OFFLINE DETERMINISTIC EVALUATION — MOCK PROVIDER**. They validate routing, scoring, persistence,
+replay, and authority enforcement—not model intelligence or global competitiveness.
+
+## Comparative evaluation
+
+```bash
+.venv/bin/quantforge evaluation list --subset full
+.venv/bin/quantforge evaluation run-case \
+  --case qf-bm-001-look-ahead --architecture single_agent
+.venv/bin/quantforge evaluation compare --subset full \
+  --output-dir /private/tmp/quantforge-evaluation
+.venv/bin/quantforge evaluation verify-export /private/tmp/quantforge-evaluation
+.venv/bin/quantforge evaluation replay /private/tmp/quantforge-evaluation
+.venv/bin/quantforge evaluation report /private/tmp/quantforge-evaluation --format human
+```
+
+Every architecture receives the same public claim, evidence inventory, fixture provider, model
+snapshot, context budget, and output budget. Ground truth and scoring live in a separate closed,
+hashed resource and are structurally absent from provider input. The baselines are faithful advisory
+architectures; QuantForge retains its real six-role schemas, persistence, workflow, provenance,
+replay, and code-owned verdict policy. The export contains separate component metrics—no composite
+score—and is independently recomputed during verification.
+
+An opt-in live plan command reports exact suite, model, call, token-budget, price-assumption, and
+maximum-cost bounds without making a call. Actual comparative live transport is not enabled in this
+phase and remains conditional on the separate official-OpenAI six-call verification and a reviewed
+activation change. See [Comparative Evaluation Methodology](docs/EVALUATION_METHODOLOGY.md) and the
+[Future Live Evaluation Runbook](docs/LIVE_EVALUATION_RUNBOOK.md).
+
 ## Flagship governed tribunal demonstration
 
 The professional offline case starts with an attractive synthetic performance claim and then shows
@@ -127,6 +158,10 @@ project authors or copyright holders.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Offline governed tribunal demonstration](docs/GOVERNED_TRIBUNAL_DEMO.md)
+- [Comparative evaluation methodology](docs/EVALUATION_METHODOLOGY.md)
+- [Future live evaluation runbook](docs/LIVE_EVALUATION_RUNBOOK.md)
+- [Phase 2B.3 requirement map](docs/PHASE_2B3_REQUIREMENT_MAP.md)
+- [Phase 2B.3 evidence manifest](docs/PHASE_2B3_EVIDENCE_MANIFEST.json)
 - [Phase 2B structured provider contract](docs/PHASE_2B_PROVIDER_CONTRACT.md)
 - [Six governed role contracts](docs/ROLE_CONTRACTS.md)
 - [OpenAI provider runbook](docs/OPENAI_PROVIDER_RUNBOOK.md)
