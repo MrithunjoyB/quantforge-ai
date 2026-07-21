@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "suite_id": "quantforge-comparative-evaluation",
+  "suite_version": "1.0.0",
+  "resources": {
+    "cases.json": "116a3d64b84597305d1eeb789117f608621bdcbcd3c3e66c91eef6cf17e53933",
+    "ground-truth.json": "88d262bb9e65366bb8ca970adfdc34d83f353ff73798bba525e00a8c98d09364",
+    "judge-subset.json": "03375306f269f4223aa19ab04a44ef538979344638dfce6d7760e4d610de54fd",
+    "mock-responses.json": "9097f535d41dd18d14a6243bfd157f0ef4b35662debe9fb35c896df1247c3183"
+  }
+}
