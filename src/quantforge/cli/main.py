@@ -7,7 +7,9 @@ import sqlite3
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
+from typing import Literal, cast
 
 from pydantic import ValidationError
 
@@ -17,6 +19,15 @@ from quantforge.demo import run_governed_tribunal_demo, verify_governed_tribunal
 from quantforge.demo.tribunal import terminal_summary
 from quantforge.domain.models import TribunalCase, WorkflowState
 from quantforge.engine import LocalCppV1Adapter
+from quantforge.evaluation.live import create_live_plan
+from quantforge.evaluation.models import EvaluationArchitecture
+from quantforge.evaluation.persistence import (
+    export_evaluation,
+    replay_evaluation_export,
+    verify_evaluation_export,
+)
+from quantforge.evaluation.runner import ALL_ARCHITECTURES, run_offline_evaluation
+from quantforge.evaluation.suite import load_suite, select_cases
 from quantforge.evidence.bundle import (
     GENESIS_BUNDLE_HASH,
     EvidenceAdmissionContext,
@@ -144,6 +155,37 @@ def _build_parser() -> argparse.ArgumentParser:
     run_governed_demo.add_argument("--output-dir", type=Path, required=True)
     verify_governed_demo = governed_demo_commands.add_parser("verify")
     verify_governed_demo.add_argument("artifact_dir", type=Path)
+
+    evaluation = commands.add_parser("evaluation", aliases=("evaluate",))
+    evaluation_commands = evaluation.add_subparsers(dest="evaluation_command", required=True)
+    list_cases = evaluation_commands.add_parser("list")
+    list_cases.add_argument("--subset", choices=("full", "judge"), default="full")
+    run_case = evaluation_commands.add_parser("run-case")
+    run_case.add_argument("--case", required=True)
+    run_case.add_argument("--architecture", action="append", choices=tuple(EvaluationArchitecture))
+    run_case.add_argument("--output-dir", type=Path)
+    run_suite = evaluation_commands.add_parser("run-suite")
+    run_suite.add_argument("--subset", choices=("full", "judge"), default="full")
+    run_suite.add_argument("--architecture", action="append", choices=tuple(EvaluationArchitecture))
+    run_suite.add_argument("--output-dir", type=Path)
+    compare = evaluation_commands.add_parser("compare")
+    compare.add_argument("--subset", choices=("full", "judge"), default="full")
+    compare.add_argument("--output-dir", type=Path)
+    verify_evaluation = evaluation_commands.add_parser("verify-export")
+    verify_evaluation.add_argument("export_dir", type=Path)
+    replay_evaluation = evaluation_commands.add_parser("replay")
+    replay_evaluation.add_argument("export_dir", type=Path)
+    evaluation_report = evaluation_commands.add_parser("report")
+    evaluation_report.add_argument("export_dir", type=Path)
+    evaluation_report.add_argument("--format", choices=("machine", "human"), required=True)
+    live_plan = evaluation_commands.add_parser("live-plan")
+    live_plan.add_argument("--subset", choices=("full", "judge"), required=True)
+    live_plan.add_argument("--architecture", action="append", choices=tuple(EvaluationArchitecture))
+    live_plan.add_argument("--model", required=True)
+    live_plan.add_argument("--maximum-context-characters", type=int, default=24_000)
+    live_plan.add_argument("--maximum-output-tokens", type=int, default=2_000)
+    live_plan.add_argument("--input-price-per-million-usd", type=Decimal, required=True)
+    live_plan.add_argument("--output-price-per-million-usd", type=Decimal, required=True)
     return parser
 
 
@@ -409,6 +451,97 @@ def _handle_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _evaluation_architectures(args: argparse.Namespace) -> tuple[EvaluationArchitecture, ...]:
+    selected = getattr(args, "architecture", None)
+    if selected is None:
+        return ALL_ARCHITECTURES
+    return tuple(EvaluationArchitecture(value) for value in selected)
+
+
+def _handle_evaluation(args: argparse.Namespace) -> int:
+    suite = load_suite()
+    if args.evaluation_command == "list":
+        cases = select_cases(suite, subset=args.subset)
+        print(
+            canonical_json(
+                {
+                    "suite_id": suite.suite_id,
+                    "suite_version": suite.suite_version,
+                    "suite_semantic_sha256": suite.semantic_sha256,
+                    "subset": args.subset,
+                    "cases": tuple(
+                        {
+                            "benchmark_id": case.benchmark_id,
+                            "case_version": case.case_version,
+                            "expected_status": case.expected_status,
+                            "semantic_sha256": case.semantic_sha256,
+                        }
+                        for case in cases
+                    ),
+                }
+            )
+        )
+        return 0
+    if args.evaluation_command == "verify-export":
+        print(canonical_json(verify_evaluation_export(args.export_dir, suite=suite)))
+        return 0
+    if args.evaluation_command == "replay":
+        print(canonical_json(replay_evaluation_export(args.export_dir)))
+        return 0
+    if args.evaluation_command == "report":
+        verify_evaluation_export(args.export_dir, suite=suite)
+        filename = "comparison-report.json" if args.format == "machine" else "comparison-report.md"
+        print((args.export_dir / filename).read_text(encoding="utf-8"), end="")
+        return 0
+    if args.evaluation_command == "live-plan":
+        plan = create_live_plan(
+            suite,
+            subset=args.subset,
+            architectures=_evaluation_architectures(args),
+            model=args.model,
+            maximum_context_characters=args.maximum_context_characters,
+            maximum_output_tokens=args.maximum_output_tokens,
+            input_price_per_million_usd=args.input_price_per_million_usd,
+            output_price_per_million_usd=args.output_price_per_million_usd,
+        )
+        print(canonical_json(plan))
+        return 0
+    if args.evaluation_command == "run-case":
+        cases = select_cases(suite, benchmark_id=args.case)
+        subset = "single_case"
+        architectures = _evaluation_architectures(args)
+    elif args.evaluation_command == "run-suite":
+        cases = select_cases(suite, subset=args.subset)
+        subset = args.subset
+        architectures = _evaluation_architectures(args)
+    else:
+        cases = select_cases(suite, subset=args.subset)
+        subset = args.subset
+        architectures = ALL_ARCHITECTURES
+    run = run_offline_evaluation(
+        suite,
+        cases,
+        architectures=architectures,
+        subset=cast(Literal["full", "judge", "single_case"], subset),
+    )
+    if args.output_dir is None:
+        print(canonical_json(run))
+    else:
+        manifest = export_evaluation(run, suite, args.output_dir)
+        print(
+            canonical_json(
+                {
+                    "evaluation_label": run.evaluation_label,
+                    "export_id": manifest.export_id,
+                    "output_directory": str(args.output_dir),
+                    "run_id": run.run_id,
+                    "run_semantic_sha256": run.semantic_sha256,
+                }
+            )
+        )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -423,6 +556,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _handle_evidence(args)
         if args.command == "demo":
             return _handle_demo(args)
+        if args.command in {"evaluation", "evaluate"}:
+            return _handle_evaluation(args)
         if args.command == "audit" and args.audit_command == "verify":
             log = AuditLog.read_jsonl(args.audit_file)
             print(canonical_json({"events": len(log.events), "valid": True}))
