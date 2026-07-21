@@ -124,8 +124,9 @@ flowchart LR
 
 Blue nodes are model-generated proposals, reviews, or explanations. Green nodes are deterministic
 QuantForge authority. Orange nodes are trusted numerical execution and evidence. Purple nodes are
-the durable evidence and audit boundary. A screenshot-oriented version is available in the
-[submission architecture sheet](submission-materials/ARCHITECTURE.md).
+the durable evidence and audit boundary. The
+[QuantForge architecture overview](docs/ARCHITECTURE_OVERVIEW.md) is a permanent technical
+reference for this diagram and its authority boundaries.
 
 ## What the model may and may not do
 
@@ -241,7 +242,6 @@ project author or an autonomous release authority.
 | `src/quantforge/demo/` | Flagship governed demonstration and artifact verification |
 | `docs/` | Architecture, governance, security, provider, evidence, and operator references |
 | `audit/` | Independent audit and release-verification records |
-| `submission-materials/` | Editable Devpost, architecture, video, verification, and checklist drafts |
 
 ## Testing and evidence
 
@@ -261,14 +261,14 @@ The protected C++ `v1.0.0` release is identified by an annotated, protected tag 
 hashes. GitHub's native immutable-release flag for that older release remains false; the release is
 not described as GitHub-native immutable. QuantForge `v0.1.0` is GitHub-native immutable. Exact tag,
 target, asset, and hash records are in the
-[submission verification record](submission-materials/VERIFICATION_RECORD.md).
+[OpenAI Build Week submission baseline verification](audit/BUILD_WEEK_SUBMISSION_VERIFICATION_2026-07-22.md).
 
 ## Offline mock versus live OpenAI status
 
 The repository contains an official OpenAI provider using strict structured outputs, explicit model
 selection, bounded retries, provenance capture, and no tool access. It is disabled by default. The
-flagship demonstration and comparative results in this submission use deterministic fixture
-providers and make no OpenAI call.
+flagship demonstration and published comparative results use deterministic fixture providers and
+make no OpenAI call.
 
 Funded live contract verification is still pending. Comparative live transport is also not enabled
 in this phase. Until those steps are separately authorized and recorded, this project makes no claim
@@ -293,12 +293,13 @@ and the [Threat Model](docs/THREAT_MODEL.md).
 
 The next bounded steps are funded live OpenAI contract verification, an approved live comparative
 evaluation, external reproduction, signed or independently anchored audit evidence, and broader
-empirical validation under reviewed data licenses. Those are future research tasks, not completed
-submission features.
+empirical validation under reviewed data licenses. Those are future research tasks, not current
+platform capabilities.
 
 ## Detailed technical documentation
 
-- [Technical architecture](docs/ARCHITECTURE.md)
+- [Architecture overview](docs/ARCHITECTURE_OVERVIEW.md)
+- [Detailed technical architecture](docs/ARCHITECTURE.md)
 - [Experiment constitution](docs/EXPERIMENT_CONSTITUTION.md)
 - [Governance](docs/GOVERNANCE.md)
 - [Evidence model](docs/EVIDENCE_MODEL.md)

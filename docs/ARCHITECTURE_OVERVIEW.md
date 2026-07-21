@@ -1,6 +1,7 @@
-# QuantForge architecture
+# QuantForge architecture overview
 
-This is the judge-facing, screenshot-ready view of the governed flagship path.
+This overview shows the governed flagship path and the boundaries between model-generated work,
+deterministic authority, trusted numerical execution, and durable audit state.
 
 ```mermaid
 flowchart LR
@@ -55,10 +56,3 @@ flowchart LR
 The model never crosses into the authority or numerical-evidence boundaries. It cannot approve a
 case, change a locked constitution, run the engine, create admissible evidence, advance workflow
 state, or strengthen the computed verdict.
-
-## Screenshot guidance
-
-- Use GitHub's light theme at 100% zoom.
-- Capture the title, diagram, and legend together if they remain legible.
-- If a 16:9 crop is required, capture the diagram first and the legend as a second insert.
-- Keep the colour legend visible when this diagram is used without narration.

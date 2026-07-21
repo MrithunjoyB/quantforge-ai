@@ -1,8 +1,9 @@
-# Submission verification and release-integrity record
+# OpenAI Build Week submission baseline verification — 2026-07-22
 
-Recorded before submission edits on 2026-07-22. This document contains public repository and release
-identities only. It does not contain credentials, private paths, generated demo artifacts, or private
-evidence.
+This historical record captures the verified OpenAI Build Week submission baseline before
+submission-specific repository edits on 2026-07-22. It contains public repository and release
+identities only. It does not contain credentials, private paths, generated demo artifacts, or
+private evidence. It is not the current release manifest.
 
 ## Protected baselines
 
