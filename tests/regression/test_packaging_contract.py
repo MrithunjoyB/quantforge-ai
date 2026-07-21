@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import tomllib
 from pathlib import Path
+
+from quantforge.evaluation.suite import load_suite
 
 
 def test_packaging_metadata_and_editable_build_dependencies_exist() -> None:
@@ -42,6 +46,28 @@ def test_synthetic_package_fixtures_are_declared_resources() -> None:
         "inconclusive.json",
         "provisional.json",
     }
+
+
+def test_evaluation_benchmark_resources_are_closed_and_packaged() -> None:
+    benchmark_root = Path(__file__).resolve().parents[2] / "src/quantforge/evaluation/benchmarks/v1"
+    assert {path.name for path in benchmark_root.iterdir() if path.is_file()} == {
+        "__init__.py",
+        "cases.json",
+        "ground-truth.json",
+        "judge-subset.json",
+        "manifest.json",
+        "mock-responses.json",
+    }
+    evidence = json.loads(
+        (Path(__file__).resolve().parents[2] / "docs/PHASE_2B3_EVIDENCE_MANIFEST.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert evidence["suite"]["case_count"] == 24
+    assert evidence["suite"]["suite_semantic_sha256"] == load_suite().semantic_sha256
+    for name, expected in evidence["suite"]["resource_sha256"].items():
+        assert hashlib.sha256((benchmark_root / name).read_bytes()).hexdigest() == expected
+    assert evidence["live_calls_executed"] == 0
 
 
 def test_runtime_and_development_locks_are_hash_complete() -> None:
