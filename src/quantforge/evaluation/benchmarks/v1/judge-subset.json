@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "suite_id": "quantforge-comparative-evaluation",
+  "suite_version": "1.0.0",
+  "benchmark_ids": [
+    "qf-bm-001-look-ahead",
+    "qf-bm-006-multiplicity",
+    "qf-bm-011-fabricated-numerics",
+    "qf-bm-014-tampered-artifact",
+    "qf-bm-019-evidence-injection",
+    "qf-bm-022-provider-authority",
+    "qf-bm-024-sound-control"
+  ]
+}
