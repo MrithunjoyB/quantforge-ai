@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Check out requested ref without persisted credentials
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
@@ -36,7 +36,7 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected-sha }}
         run: python3 -c "import os,re,subprocess; expected=os.environ['EXPECTED_SHA']; actual=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(); assert re.fullmatch('[0-9a-f]{40}', expected) and actual == expected, (actual, expected)"
       - name: Set up Python 3.12 with lock-bound cache
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -53,7 +53,7 @@ jobs:
           --allow-recorded-engine-boundary
           --expected-origin https://github.com/${{ github.repository }}
       - name: Upload non-sensitive candidate artifacts without publishing
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: quantforge-ai-v0.1.0-candidate-${{ inputs.expected-sha }}
           path: release/v0.1.0/
